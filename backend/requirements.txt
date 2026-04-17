@@ -1,0 +1,13 @@
+# === 后端依赖 ===
+flask==3.0.0
+flask-cors==4.0.0
+PyJWT==2.8.0
+happybase==1.2.0
+hdfs==2.7.3
+requests==2.31.0
+
+# === Spark 作业依赖 (需 PySpark) ===
+# pyspark==3.5.0  # 通常通过 Spark 安装自带，如需单独安装可取消注释
+
+# === 开发辅助 ===
+# python-dotenv==1.0.0

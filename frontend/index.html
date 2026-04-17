@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智能云盘 - BigData Cloud Drive</title>
+  <!-- Vue 3 -->
+  <script src="https://cdn.jsdelivr.net/npm/vue@3.3.4/dist/vue.global.prod.js"></script>
+  <!-- ECharts -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.263.1/dist/umd/lucide.min.js"></script>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- 登录/注册页 -->
+    <div v-if="!token" class="auth-page">
+      <div class="auth-container">
+        <div class="auth-header">
+          <div class="logo-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 12c0 5.25-4.25 9.5-9.5 9.5S2.5 17.25 2.5 12 6.75 2.5 12 2.5s9.5 4.25 9.5 9.5z"/><path d="M9 12l2 2 4-4"/></svg>
+          </div>
+          <h1>智能云盘</h1>
+          <p class="auth-subtitle">基于 HBase/HDFS 的分布式存储系统</p>
+        </div>
+
+        <div class="auth-tabs">
+          <button :class="{active: authMode === 'login'}" @click="authMode='login'">登 录</button>
+          <button :class="{active: authMode === 'register'}" @click="authMode='register'">注 册</button>
+        </div>
+
+        <form @submit.prevent="authMode === 'login' ? doLogin() : doRegister()" class="auth-form">
+          <div class="input-group">
+            <label>用户名</label>
+            <input v-model="authForm.username" type="text" placeholder="请输入用户名" required minlength="3" maxlength="20">
+          </div>
+          <div class="input-group">
+            <label>密码</label>
+            <input v-model="authForm.password" type="password" placeholder="请输入密码" required minlength="6">
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" :disabled="loading">
+            {{ loading ? '处理中...' : (authMode === 'login' ? '登 录' : '注 册') }}
+          </button>
+        </form>
+        <p v-if="authError" class="auth-error">{{ authError }}</p>
+      </div>
+    </div>
+
+    <!-- 主界面 -->
+    <div v-else class="main-layout">
+      <!-- 侧边栏 -->
+      <aside class="sidebar">
+        <div class="sidebar-logo">
+          <span class="logo-dot"></span>
+          <span>智能云盘</span>
+        </div>
+        <nav class="sidebar-nav">
+          <a :class="{active: currentPage === 'files'}" @click="currentPage='files'">
+            <i data-lucide="folder"></i> <span>我的文件</span>
+          </a>
+          <a :class="{active: currentPage === 'dashboard'}" @click="currentPage='dashboard'">
+            <i data-lucide="bar-chart-3"></i> <span>数据看板</span>
+          </a>
+          <a :class="{active: currentPage === 'recommend'}" @click="currentPage='recommend'">
+            <i data-lucide="sparkles"></i> <span>智能推荐</span>
+          </a>
+          <a v-if="userRole === 'admin'" :class="{active: currentPage === 'logs'}" @click="currentPage='logs'">
+            <i data-lucide="scroll-text"></i> <span>操作日志</span>
+          </a>
+        </nav>
+        <div class="sidebar-footer">
+          <div class="user-badge">
+            <span class="user-avatar">{{ username.charAt(0).toUpperCase() }}</span>
+            <div class="user-info">
+              <span class="user-name">{{ username }}</span>
+              <span class="user-role">{{ userRole === 'admin' ? '管理员' : '普通用户' }}</span>
+            </div>
+          </div>
+          <button class="btn-logout" @click="doLogout">退出</button>
+        </div>
+      </aside>
+
+      <!-- 主内容区 -->
+      <main class="main-content">
+        <!-- ========== 文件管理页 ========== -->
+        <div v-if="currentPage === 'files'" class="page-files">
+          <div class="page-header">
+            <h2>我的文件</h2>
+            <div class="header-actions">
+              <!-- 视图切换 -->
+              <div class="view-toggle">
+                <button :class="{active: fileViewMode === 'list'}" @click="switchFileView('list')" title="列表视图">
+                  <i data-lucide="list"></i>
+                </button>
+                <button :class="{active: fileViewMode === 'graph'}" @click="switchFileView('graph')" title="关系图谱">
+                  <i data-lucide="git-branch"></i>
+                </button>
+              </div>
+              <div class="search-box" v-if="fileViewMode === 'list'">
+                <input v-model="searchKeyword" @keyup.enter="loadFiles" type="text" placeholder="搜索文件名...">
+                <button @click="loadFiles" class="btn-icon"><i data-lucide="search"></i></button>
+              </div>
+              <select v-model="filterType" @change="loadFiles" class="filter-select" v-if="fileViewMode === 'list'">
+                <option value="">全部类型</option>
+                <option v-for="t in ['pdf','txt','jpg','png','zip','doc','xlsx','py','java','md']" :value="t">{{ t.toUpperCase() }}</option>
+              </select>
+              <label class="btn btn-primary upload-btn">
+                <i data-lucide="upload"></i> 上传文件
+                <input type="file" @change="doUpload" style="display:none" multiple>
+              </label>
+            </div>
+          </div>
+
+          <!-- 上传进度 -->
+          <div v-if="uploading" class="upload-progress">
+            <div class="progress-bar"><div class="progress-fill" style="width:100%; animation: pulse 1.5s infinite"></div></div>
+            <span>正在上传...</span>
+          </div>
+
+          <!-- ===== 列表视图 ===== -->
+          <template v-if="fileViewMode === 'list'">
+            <div class="file-table-wrap">
+              <table class="file-table">
+                <thead>
+                  <tr>
+                    <th>文件名</th>
+                    <th>类型</th>
+                    <th>大小</th>
+                    <th>上传时间</th>
+                    <th>下载次数</th>
+                    <th>AI 标签</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="f in files" :key="f.file_id">
+                    <td class="filename-cell">
+                      <span class="file-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</span>
+                      <span>{{ f.filename }}</span>
+                    </td>
+                    <td><span class="type-badge">{{ (f.type || '').toUpperCase() }}</span></td>
+                    <td>{{ formatSize(f.size) }}</td>
+                    <td>{{ formatTime(f.created_at) }}</td>
+                    <td>{{ f.downloads || 0 }}</td>
+                    <td>
+                      <span v-for="tag in (f.tags || '').split(',').filter(t=>t)" class="tag-badge">{{ tag }}</span>
+                      <span v-if="!f.tags" class="text-muted">—</span>
+                    </td>
+                    <td class="actions-cell">
+                      <button @click="doPreview(f)" class="btn-sm" title="预览"><i data-lucide="eye"></i></button>
+                      <button @click="doDownload(f)" class="btn-sm" title="下载"><i data-lucide="download"></i></button>
+                      <button @click="doGenerateSummary(f)" class="btn-sm" title="AI 摘要"><i data-lucide="sparkles"></i></button>
+                      <button @click="doDelete(f)" class="btn-sm btn-danger" title="删除"><i data-lucide="trash-2"></i></button>
+                    </td>
+                  </tr>
+                  <tr v-if="files.length === 0">
+                    <td colspan="7" class="empty-state">暂无文件，点击右上角上传</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- 分页 -->
+            <div v-if="filePagination.total_pages > 1" class="pagination">
+              <button @click="goPage(filePagination.page - 1)" :disabled="filePagination.page <= 1">上一页</button>
+              <span>{{ filePagination.page }} / {{ filePagination.total_pages }}</span>
+              <button @click="goPage(filePagination.page + 1)" :disabled="filePagination.page >= filePagination.total_pages">下一页</button>
+            </div>
+          </template>
+
+          <!-- ===== 关系图谱视图 ===== -->
+          <template v-if="fileViewMode === 'graph'">
+            <div class="graph-container">
+              <div class="graph-main">
+                <div v-if="graphLoading" class="graph-loading">
+                  <div class="spinner"></div>
+                  <span>正在加载文件关系图谱...</span>
+                </div>
+                <div id="file-graph" class="graph-canvas"></div>
+                <div class="graph-hint" v-if="!graphLoading && graphData">
+                  <span>点击节点查看文件详情 | 鼠标滚轮缩放 | 拖拽平移</span>
+                </div>
+              </div>
+              <!-- 右侧详情面板 -->
+              <div class="graph-sidebar" v-if="selectedGraphFile">
+                <div class="graph-detail-card">
+                  <h3>文件详情</h3>
+                  <div class="detail-row">
+                    <span class="detail-label">文件名</span>
+                    <span class="detail-value">{{ selectedGraphFile.name }}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">类型</span>
+                    <span class="type-badge">{{ (selectedGraphFile.type || '').toUpperCase() }}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">大小</span>
+                    <span class="detail-value">{{ formatSize(selectedGraphFile.size) }}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">所有者</span>
+                    <span class="detail-value">{{ selectedGraphFile.owner }}</span>
+                  </div>
+                  <div class="detail-row">
+                    <span class="detail-label">下载次数</span>
+                    <span class="detail-value">{{ selectedGraphFile.downloads }}</span>
+                  </div>
+                  <div class="detail-row" v-if="selectedGraphFile.tags">
+                    <span class="detail-label">标签</span>
+                    <div class="tags-row">
+                      <span v-for="tag in selectedGraphFile.tags.split(',').filter(t=>t)" class="tag-badge">{{ tag }}</span>
+                    </div>
+                  </div>
+                  <div class="detail-row" v-if="selectedGraphFile.summary">
+                    <span class="detail-label">摘要</span>
+                    <p class="detail-summary">{{ selectedGraphFile.summary }}</p>
+                  </div>
+                </div>
+                <!-- 关联文件列表 -->
+                <div class="graph-detail-card" v-if="relatedFiles.length > 0">
+                  <h3>关联文件</h3>
+                  <div v-for="rf in relatedFiles" :key="rf.file_id" class="related-file-item">
+                    <span class="file-icon" :data-type="rf.type">{{ getFileIcon(rf.type || '') }}</span>
+                    <div class="related-file-info">
+                      <span class="related-file-name">{{ rf.filename }}</span>
+                      <span class="related-file-meta">{{ (rf.type || '').toUpperCase() }} · {{ formatSize(rf.size) }}</span>
+                    </div>
+                    <span class="relation-score">{{ (rf.relation_score * 100).toFixed(0) }}%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- 文件预览弹窗 -->
+          <div v-if="previewModal" class="modal-overlay" @click.self="previewModal=null">
+            <div class="modal-card preview-modal">
+              <div class="preview-header">
+                <h3>{{ previewModal.filename || '文件预览' }}</h3>
+                <button @click="previewModal=null" class="preview-close">&times;</button>
+              </div>
+              <div class="preview-body">
+                <div v-if="previewModal.type === 'loading'" class="preview-unsupported">
+                  <div class="spinner" style="margin:0 auto 12px"></div>
+                  <p>正在加载预览...</p>
+                </div>
+                <pre v-else-if="previewModal.type === 'text'" class="preview-text">{{ previewModal.content }}</pre>
+                <img v-else-if="previewModal.type === 'image'" :src="previewModal.data_url" :alt="previewModal.filename" class="preview-image">
+                <div v-else class="preview-unsupported">
+                  <div class="preview-icon">{{ getFileIcon('') }}</div>
+                  <p>{{ previewModal.message || '此类型文件暂不支持预览' }}</p>
+                  <p style="font-size:12px;color:var(--text-muted);margin-top:8px">请下载文件后使用本地应用打开</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI 摘要弹窗 -->
+          <div v-if="summaryModal" class="modal-overlay" @click.self="summaryModal=null">
+            <div class="modal-card">
+              <h3>AI 文件分析</h3>
+              <p class="modal-filename">{{ summaryModal.filename }}</p>
+              <div class="modal-section">
+                <h4>摘要</h4>
+                <p>{{ summaryModal.summary || '暂无摘要' }}</p>
+              </div>
+              <div class="modal-section">
+                <h4>标签</h4>
+                <div class="tags-row">
+                  <span v-for="tag in (summaryModal.tags || '').split(',').filter(t=>t)" class="tag-badge lg">{{ tag }}</span>
+                  <span v-if="!summaryModal.tags">暂无标签</span>
+                </div>
+              </div>
+              <button @click="summaryModal=null" class="btn btn-secondary">关闭</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== 数据看板 ========== -->
+        <div v-if="currentPage === 'dashboard'" class="page-dashboard">
+          <div class="page-header"><h2>数据看板</h2></div>
+
+          <!-- 概览卡片 -->
+          <div class="stat-cards">
+            <div class="stat-card">
+              <div class="stat-icon blue"><i data-lucide="file"></i></div>
+              <div class="stat-info"><span class="stat-number">{{ dashboardData.total_files || 0 }}</span><span class="stat-label">总文件数</span></div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon green"><i data-lucide="hard-drive"></i></div>
+              <div class="stat-info"><span class="stat-number">{{ dashboardData.total_size_readable || '0 B' }}</span><span class="stat-label">总存储</span></div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon orange"><i data-lucide="download"></i></div>
+              <div class="stat-info"><span class="stat-number">{{ dashboardData.total_downloads || 0 }}</span><span class="stat-label">总下载</span></div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon purple"><i data-lucide="users"></i></div>
+              <div class="stat-info"><span class="stat-number">{{ dashboardData.total_users || 0 }}</span><span class="stat-label">用户数</span></div>
+            </div>
+          </div>
+
+          <!-- 图表区 -->
+          <div class="chart-grid">
+            <div class="chart-card">
+              <h3>各用户文件数量</h3>
+              <div id="chart-user-files" class="chart-box"></div>
+            </div>
+            <div class="chart-card">
+              <h3>文件类型分布</h3>
+              <div id="chart-file-types" class="chart-box"></div>
+            </div>
+            <div class="chart-card wide">
+              <h3>近 7 天上传趋势</h3>
+              <div id="chart-daily-trend" class="chart-box"></div>
+            </div>
+          </div>
+
+          <!-- 活跃热力图 -->
+          <div class="chart-card wide">
+            <h3>活跃热力图</h3>
+            <div id="chart-activity-heatmap" class="chart-box heatmap-box"></div>
+          </div>
+
+          <!-- 热门文件 -->
+          <div class="chart-card">
+            <h3>热门文件 Top 10</h3>
+            <div id="chart-hot-files" class="chart-box"></div>
+          </div>
+        </div>
+
+        <!-- ========== 智能推荐 ========== -->
+        <div v-if="currentPage === 'recommend'" class="page-recommend">
+          <div class="page-header"><h2>智能推荐</h2></div>
+
+          <div class="recommend-tabs">
+            <button :class="{active: recTab === 'hot'}" @click="recTab='hot'; loadRecommend()">热门推荐</button>
+            <button :class="{active: recTab === 'personal'}" @click="recTab='personal'; loadRecommend()">个性化推荐</button>
+            <button :class="{active: recTab === 'similar'}" @click="recTab='similar'; loadRecommend()">相似用户推荐</button>
+          </div>
+
+          <div class="recommend-list">
+            <div v-for="f in recommendFiles" :key="f.file_id" class="recommend-card">
+              <div class="rec-icon" :data-type="f.type">{{ getFileIcon(f.type || '') }}</div>
+              <div class="rec-info">
+                <span class="rec-name">{{ f.filename }}</span>
+                <span class="rec-meta">{{ (f.type || '').toUpperCase() }} · {{ formatSize(f.size) }} · 上传者: {{ f.owner }}</span>
+              </div>
+              <div class="rec-stats">
+                <span>下载 {{ f.downloads || 0 }} 次</span>
+              </div>
+              <button @click="doDownload(f)" class="btn btn-sm">下载</button>
+            </div>
+            <div v-if="recommendFiles.length === 0" class="empty-state">暂无推荐数据</div>
+          </div>
+        </div>
+
+        <!-- ========== 操作日志 ========== -->
+        <div v-if="currentPage === 'logs'" class="page-logs">
+          <div class="page-header"><h2>操作日志</h2></div>
+          <table class="file-table">
+            <thead><tr><th>时间</th><th>用户</th><th>操作</th><th>详情</th></tr></thead>
+            <tbody>
+              <tr v-for="l in logs" :key="l.time + l.username">
+                <td>{{ l.time }}</td>
+                <td>{{ l.username }}</td>
+                <td><span class="action-badge" :class="l.action">{{ actionLabel(l.action) }}</span></td>
+                <td>{{ l.detail }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+
+    <!-- 全局 Toast -->
+    <div v-if="toast" class="toast" :class="toast.type">{{ toast.message }}</div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

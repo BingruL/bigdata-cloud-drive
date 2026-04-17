@@ -1,0 +1,44 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+*.log
+/tmp/
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Python 虚拟环境
+.venv/
+venv/
+
+# 上传临时文件
+/tmp/cloud-drive-uploads/
+
+# 本地环境变量
+.env.local
+activate.sh
+
+# Spark 作业日志
+spark-warehouse/
+metastore_db/
+derby.log
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# Hadoop/HBase 数据（若在项目内）
+data/
+logs/
