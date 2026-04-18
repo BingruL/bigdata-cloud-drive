@@ -160,10 +160,13 @@ def main():
             if args.seed:
                 seed_test_data(hbase, hdfs, config)
         except Exception as e:
-            print(f"\n[错误] 初始化失败: {e}")
-            print("请确保 HBase Thrift Server 和 HDFS 已启动。")
-            print("  启动 HBase: start-hbase.sh && hbase thrift start")
-            print("  启动 HDFS:  start-dfs.sh")
+            #print(f"\n[错误] 初始化失败: {e}")
+            #print("请确保 HBase Thrift Server 和 HDFS 已启动。")
+            #print("  启动 HBase: start-hbase.sh && hbase thrift start")
+            #print("  启动 HDFS:  start-dfs.sh")
+            print(f"\n[错误] 初始化失败: {type(e).__name__}: {e}")
+            import traceback
+            traceback.print_exc()
             sys.exit(1)
 
     # 启动 Flask

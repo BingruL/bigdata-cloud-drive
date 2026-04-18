@@ -17,7 +17,7 @@ class Config:
 
     # HDFS
     HDFS_URL = os.environ.get("HDFS_URL", "http://localhost:9870")
-    HDFS_USER = os.environ.get("HDFS_USER", "hadoop")
+    HDFS_USER = os.environ.get("HDFS_USER", "bingru")
     HDFS_ROOT_DIR = "/cloud-drive"
 
     # HBase

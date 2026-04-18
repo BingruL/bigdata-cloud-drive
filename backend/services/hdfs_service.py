@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class HDFSService:
     """HDFS 文件存储服务"""
 
-    def __init__(self, url="http://localhost:9870", user="hadoop", root_dir="/cloud-drive"):
+    def __init__(self, url="http://localhost:9870", user="bingru", root_dir="/cloud-drive"):
         self.url = url
         self.user = user
         self.root_dir = root_dir
