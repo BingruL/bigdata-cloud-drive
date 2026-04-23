@@ -63,6 +63,13 @@
           <a :class="{active: currentPage === 'files'}" @click="currentPage='files'">
             <i data-lucide="folder"></i> <span>我的文件</span>
           </a>
+          <a :class="{active: currentPage === 'recent'}" @click="currentPage='recent'">
+            <i data-lucide="clock"></i> <span>最近访问</span>
+          </a>
+          <a :class="{active: currentPage === 'trash'}" @click="currentPage='trash'">
+            <i data-lucide="trash-2"></i> <span>回收站</span>
+            <span v-if="storageInfo.trash_count" class="nav-badge">{{ storageInfo.trash_count }}</span>
+          </a>
           <a :class="{active: currentPage === 'dashboard'}" @click="currentPage='dashboard'">
             <i data-lucide="bar-chart-3"></i> <span>数据看板</span>
           </a>
@@ -73,6 +80,23 @@
             <i data-lucide="scroll-text"></i> <span>操作日志</span>
           </a>
         </nav>
+
+        <!-- 存储配额 -->
+        <div class="storage-panel">
+          <div class="storage-label">
+            <span>存储空间</span>
+            <span class="storage-percent">{{ storageInfo.percent || 0 }}%</span>
+          </div>
+          <div class="storage-bar">
+            <div class="storage-fill"
+                 :class="{warn: (storageInfo.percent||0) >= 80, full: (storageInfo.percent||0) >= 95}"
+                 :style="{ width: (storageInfo.percent || 0) + '%' }"></div>
+          </div>
+          <div class="storage-meta">
+            {{ storageInfo.used_readable || '0 B' }} / {{ storageInfo.quota_readable || '—' }}
+          </div>
+        </div>
+
         <div class="sidebar-footer">
           <div class="user-badge">
             <span class="user-avatar">{{ username.charAt(0).toUpperCase() }}</span>
@@ -279,6 +303,87 @@
               <button @click="summaryModal=null" class="btn btn-secondary">关闭</button>
             </div>
           </div>
+        </div>
+
+        <!-- ========== 最近访问 ========== -->
+        <div v-if="currentPage === 'recent'" class="page-recent">
+          <div class="page-header">
+            <h2>最近访问</h2>
+            <div class="header-actions">
+              <span class="header-caption">{{ recentFiles.length }} 条记录</span>
+            </div>
+          </div>
+          <div class="file-table-wrap" v-if="recentFiles.length">
+            <table class="file-table">
+              <thead>
+                <tr>
+                  <th>文件名</th>
+                  <th>类型</th>
+                  <th>大小</th>
+                  <th>最近访问</th>
+                  <th>访问次数</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="f in recentFiles" :key="f.file_id">
+                  <td class="filename-cell">
+                    <span class="file-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</span>
+                    <span>{{ f.filename }}</span>
+                  </td>
+                  <td><span class="type-badge">{{ (f.type || '').toUpperCase() }}</span></td>
+                  <td>{{ formatSize(f.size) }}</td>
+                  <td>{{ formatTime(f.last_access) }}</td>
+                  <td>{{ f.access_count }}</td>
+                  <td class="actions-cell">
+                    <button @click="doPreview(f)" class="btn-sm" title="预览"><i data-lucide="eye"></i></button>
+                    <button @click="doDownload(f)" class="btn-sm" title="下载"><i data-lucide="download"></i></button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-else class="empty-state" style="padding:72px 24px;text-align:center">暂无访问记录，下载或预览文件后会出现在这里</div>
+        </div>
+
+        <!-- ========== 回收站 ========== -->
+        <div v-if="currentPage === 'trash'" class="page-trash">
+          <div class="page-header">
+            <h2>回收站</h2>
+            <div class="header-actions">
+              <span class="header-caption">{{ trashFiles.length }} 个文件 · 占 {{ storageInfo.trash_size_readable || '0 B' }}</span>
+            </div>
+          </div>
+          <p class="trash-hint">已移至回收站的文件仍占用存储配额。恢复可还原到"我的文件"，彻底删除后无法恢复。</p>
+          <div class="file-table-wrap" v-if="trashFiles.length">
+            <table class="file-table">
+              <thead>
+                <tr>
+                  <th>文件名</th>
+                  <th>类型</th>
+                  <th>大小</th>
+                  <th>删除时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="f in trashFiles" :key="f.file_id">
+                  <td class="filename-cell">
+                    <span class="file-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</span>
+                    <span>{{ f.filename }}</span>
+                  </td>
+                  <td><span class="type-badge">{{ (f.type || '').toUpperCase() }}</span></td>
+                  <td>{{ formatSize(f.size) }}</td>
+                  <td>{{ formatTime(f.deleted_at) }}</td>
+                  <td class="actions-cell">
+                    <button @click="doRestore(f)" class="btn-sm" title="恢复"><i data-lucide="undo-2"></i> 恢复</button>
+                    <button @click="doPurge(f)" class="btn-sm btn-danger" title="彻底删除"><i data-lucide="x"></i> 彻底删除</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-else class="empty-state" style="padding:72px 24px;text-align:center">回收站为空</div>
         </div>
 
         <!-- ========== 数据看板 ========== -->

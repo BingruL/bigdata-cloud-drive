@@ -47,6 +47,16 @@ const app = createApp({
     // ===== Logs State =====
     const logs = ref([]);
 
+    // ===== Storage / Recent / Trash State =====
+    const storageInfo = reactive({
+      used: 0, quota: 0, percent: 0,
+      used_readable: "", quota_readable: "",
+      active_count: 0, trash_count: 0,
+      trash_size: 0, trash_size_readable: "",
+    });
+    const recentFiles = ref([]);
+    const trashFiles = ref([]);
+
     // ===== Helpers =====
     function showToast(message, type = "info") {
       toast.value = { message, type };
@@ -89,6 +99,7 @@ const app = createApp({
         localStorage.setItem("cd_role", data.user.role);
         showToast("登录成功", "success");
         loadFiles();
+        loadStorage();
       } catch (e) {
         authError.value = e.message;
       } finally {
@@ -154,6 +165,7 @@ const app = createApp({
         }
         showToast(`${fileList.length} 个文件上传成功`, "success");
         loadFiles();
+        loadStorage();
       } catch (e) {
         showToast("上传失败: " + e.message, "error");
       } finally {
@@ -184,11 +196,12 @@ const app = createApp({
     }
 
     async function doDelete(f) {
-      if (!confirm(`确定删除文件 "${f.filename}" 吗？\n此操作将同时删除 HDFS 文件和 HBase 元数据。`)) return;
+      if (!confirm(`将 "${f.filename}" 移至回收站？\n可在"回收站"中恢复或彻底删除。`)) return;
       try {
         await api(`/files/${f.file_id}`, { method: "DELETE" });
-        showToast("文件已删除", "success");
+        showToast("已移至回收站", "success");
         loadFiles(filePagination.page);
+        loadStorage();
       } catch (e) {
         showToast("删除失败: " + e.message, "error");
       }
@@ -610,6 +623,57 @@ const app = createApp({
       }
     }
 
+    // ===== Storage quota =====
+    async function loadStorage() {
+      try {
+        const data = await api("/stats/my-storage");
+        Object.assign(storageInfo, data);
+      } catch (e) { /* silent */ }
+    }
+
+    // ===== Recent files =====
+    async function loadRecent() {
+      try {
+        const data = await api("/files/recent?limit=50");
+        recentFiles.value = data.files || [];
+      } catch (e) {
+        showToast("加载最近访问失败: " + e.message, "error");
+      }
+    }
+
+    // ===== Trash =====
+    async function loadTrash() {
+      try {
+        const data = await api("/files/trash?page=1&page_size=100");
+        trashFiles.value = data.files || [];
+      } catch (e) {
+        showToast("加载回收站失败: " + e.message, "error");
+      }
+    }
+
+    async function doRestore(f) {
+      try {
+        await api(`/files/${f.file_id}/restore`, { method: "POST" });
+        showToast("文件已恢复", "success");
+        loadTrash();
+        loadStorage();
+      } catch (e) {
+        showToast("恢复失败: " + e.message, "error");
+      }
+    }
+
+    async function doPurge(f) {
+      if (!confirm(`确定彻底删除 "${f.filename}" 吗？\n此操作将从 HDFS 永久移除，无法恢复。`)) return;
+      try {
+        await api(`/files/${f.file_id}/purge`, { method: "DELETE" });
+        showToast("文件已彻底删除", "success");
+        loadTrash();
+        loadStorage();
+      } catch (e) {
+        showToast("彻底删除失败: " + e.message, "error");
+      }
+    }
+
     // ===== Logs =====
     async function loadLogs() {
       try {
@@ -660,6 +724,8 @@ const app = createApp({
         if (typeof lucide !== "undefined") lucide.createIcons();
       });
       if (page === "files") loadFiles();
+      if (page === "recent") loadRecent();
+      if (page === "trash") loadTrash();
       if (page === "dashboard") loadDashboard();
       if (page === "recommend") loadRecommend();
       if (page === "logs") loadLogs();
@@ -669,6 +735,7 @@ const app = createApp({
     onMounted(() => {
       if (token.value) {
         loadFiles();
+        loadStorage();
       }
       nextTick(() => {
         if (typeof lucide !== "undefined") lucide.createIcons();
@@ -684,10 +751,12 @@ const app = createApp({
       dashboardData,
       recTab, recommendFiles,
       logs,
+      storageInfo, recentFiles, trashFiles,
       showToast, doLogin, doRegister, doLogout,
       loadFiles, goPage, doUpload, doDownload, doDelete, doGenerateSummary, doPreview,
       switchFileView, loadRelatedFiles,
       loadRecommend,
+      doRestore, doPurge,
       formatSize, formatTime, getFileIcon, actionLabel,
     };
   },
