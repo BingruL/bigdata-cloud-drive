@@ -148,28 +148,56 @@
 
           <!-- ===== 列表视图 ===== -->
           <template v-if="fileViewMode === 'list'">
+            <!-- 批量操作栏 -->
+            <div v-if="selectionCount > 0" class="batch-toolbar">
+              <span class="batch-count">已选 <b>{{ selectionCount }}</b> 项</span>
+              <div class="batch-actions">
+                <button @click="doBatchDownload" class="btn-sm"><i data-lucide="download"></i> 批量下载</button>
+                <button @click="doBatchDelete" class="btn-sm btn-danger"><i data-lucide="trash-2"></i> 移至回收站</button>
+                <button @click="clearSelection" class="btn-sm">取消</button>
+              </div>
+            </div>
+
             <div class="file-table-wrap">
-              <table class="file-table">
+              <table class="file-table sortable">
                 <thead>
                   <tr>
-                    <th>文件名</th>
-                    <th>类型</th>
-                    <th>大小</th>
-                    <th>上传时间</th>
-                    <th>下载次数</th>
-                    <th>AI 标签</th>
-                    <th>操作</th>
+                    <th class="col-check">
+                      <input type="checkbox"
+                             :checked="sortedFiles.length > 0 && sortedFiles.every(f => isSelected(f.file_id))"
+                             @change="toggleSelectAll(sortedFiles)">
+                    </th>
+                    <th @click="toggleSort('filename')" :class="{sorted: sortKey==='filename'}">
+                      文件名<span class="sort-caret">{{ sortKey==='filename' ? (sortDir==='asc' ? '▴' : '▾') : '' }}</span>
+                    </th>
+                    <th @click="toggleSort('type')" :class="{sorted: sortKey==='type'}">
+                      类型<span class="sort-caret">{{ sortKey==='type' ? (sortDir==='asc' ? '▴' : '▾') : '' }}</span>
+                    </th>
+                    <th @click="toggleSort('size')" :class="{sorted: sortKey==='size'}">
+                      大小<span class="sort-caret">{{ sortKey==='size' ? (sortDir==='asc' ? '▴' : '▾') : '' }}</span>
+                    </th>
+                    <th @click="toggleSort('created_at')" :class="{sorted: sortKey==='created_at'}">
+                      上传时间<span class="sort-caret">{{ sortKey==='created_at' ? (sortDir==='asc' ? '▴' : '▾') : '' }}</span>
+                    </th>
+                    <th @click="toggleSort('downloads')" :class="{sorted: sortKey==='downloads'}">
+                      下载次数<span class="sort-caret">{{ sortKey==='downloads' ? (sortDir==='asc' ? '▴' : '▾') : '' }}</span>
+                    </th>
+                    <th class="no-sort">AI 标签</th>
+                    <th class="no-sort">操作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="f in files" :key="f.file_id">
+                  <tr v-for="f in sortedFiles" :key="f.file_id" :class="{'row-selected': isSelected(f.file_id)}">
+                    <td class="col-check">
+                      <input type="checkbox" :checked="isSelected(f.file_id)" @change="toggleSelect(f.file_id)">
+                    </td>
                     <td class="filename-cell">
                       <span class="file-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</span>
                       <span>{{ f.filename }}</span>
                     </td>
                     <td><span class="type-badge">{{ (f.type || '').toUpperCase() }}</span></td>
                     <td>{{ formatSize(f.size) }}</td>
-                    <td>{{ formatTime(f.created_at) }}</td>
+                    <td :title="new Date(parseInt(f.created_at)).toLocaleString('zh-CN')">{{ formatTime(f.created_at) }}</td>
                     <td>{{ f.downloads || 0 }}</td>
                     <td>
                       <span v-for="tag in (f.tags || '').split(',').filter(t=>t)" class="tag-badge">{{ tag }}</span>
@@ -182,8 +210,8 @@
                       <button @click="doDelete(f)" class="btn-sm btn-danger" title="删除"><i data-lucide="trash-2"></i></button>
                     </td>
                   </tr>
-                  <tr v-if="files.length === 0">
-                    <td colspan="7" class="empty-state">暂无文件，点击右上角上传</td>
+                  <tr v-if="sortedFiles.length === 0">
+                    <td colspan="8" class="empty-state">暂无文件，点击右上角上传</td>
                   </tr>
                 </tbody>
               </table>
@@ -355,10 +383,25 @@
             </div>
           </div>
           <p class="trash-hint">已移至回收站的文件仍占用存储配额。恢复可还原到"我的文件"，彻底删除后无法恢复。</p>
+
+          <div v-if="selectionCount > 0" class="batch-toolbar">
+            <span class="batch-count">已选 <b>{{ selectionCount }}</b> 项</span>
+            <div class="batch-actions">
+              <button @click="doBatchRestore" class="btn-sm"><i data-lucide="undo-2"></i> 批量恢复</button>
+              <button @click="doBatchPurge" class="btn-sm btn-danger"><i data-lucide="x"></i> 批量彻底删除</button>
+              <button @click="clearSelection" class="btn-sm">取消</button>
+            </div>
+          </div>
+
           <div class="file-table-wrap" v-if="trashFiles.length">
             <table class="file-table">
               <thead>
                 <tr>
+                  <th class="col-check">
+                    <input type="checkbox"
+                           :checked="trashFiles.length > 0 && trashFiles.every(f => isSelected(f.file_id))"
+                           @change="toggleSelectAll(trashFiles)">
+                  </th>
                   <th>文件名</th>
                   <th>类型</th>
                   <th>大小</th>
@@ -367,7 +410,10 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="f in trashFiles" :key="f.file_id">
+                <tr v-for="f in trashFiles" :key="f.file_id" :class="{'row-selected': isSelected(f.file_id)}">
+                  <td class="col-check">
+                    <input type="checkbox" :checked="isSelected(f.file_id)" @change="toggleSelect(f.file_id)">
+                  </td>
                   <td class="filename-cell">
                     <span class="file-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</span>
                     <span>{{ f.filename }}</span>

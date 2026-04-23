@@ -47,6 +47,40 @@ const app = createApp({
     // ===== Logs State =====
     const logs = ref([]);
 
+    // ===== Sort / Selection State =====
+    const sortKey = ref("created_at");  // filename | type | size | created_at | downloads
+    const sortDir = ref("desc");         // "asc" | "desc"
+    const selectedIds = ref(new Set());
+    const selectedIdsVersion = ref(0);   // bump to trigger computed re-eval on Set mutation
+
+    function toggleSort(key) {
+      if (sortKey.value === key) {
+        sortDir.value = sortDir.value === "asc" ? "desc" : "asc";
+      } else {
+        sortKey.value = key;
+        sortDir.value = "asc";
+      }
+    }
+
+    const sortedFiles = computed(() => {
+      const list = [...files.value];
+      const key = sortKey.value;
+      const dir = sortDir.value === "asc" ? 1 : -1;
+      list.sort((a, b) => {
+        let va = a[key], vb = b[key];
+        if (key === "size" || key === "downloads" || key === "created_at") {
+          va = parseInt(va || 0); vb = parseInt(vb || 0);
+        } else {
+          va = (va || "").toString().toLowerCase();
+          vb = (vb || "").toString().toLowerCase();
+        }
+        if (va < vb) return -1 * dir;
+        if (va > vb) return  1 * dir;
+        return 0;
+      });
+      return list;
+    });
+
     // ===== Storage / Recent / Trash State =====
     const storageInfo = reactive({
       used: 0, quota: 0, percent: 0,
@@ -623,6 +657,83 @@ const app = createApp({
       }
     }
 
+    // ===== Selection helpers =====
+    function isSelected(id) {
+      selectedIdsVersion.value;  // subscribe
+      return selectedIds.value.has(id);
+    }
+    function toggleSelect(id) {
+      if (selectedIds.value.has(id)) selectedIds.value.delete(id);
+      else selectedIds.value.add(id);
+      selectedIdsVersion.value++;
+    }
+    function clearSelection() {
+      selectedIds.value.clear();
+      selectedIdsVersion.value++;
+    }
+    function toggleSelectAll(list) {
+      const ids = list.map(f => f.file_id);
+      const allChosen = ids.every(id => selectedIds.value.has(id));
+      if (allChosen) ids.forEach(id => selectedIds.value.delete(id));
+      else ids.forEach(id => selectedIds.value.add(id));
+      selectedIdsVersion.value++;
+    }
+    const selectionCount = computed(() => { selectedIdsVersion.value; return selectedIds.value.size; });
+
+    async function doBatchDelete() {
+      const ids = [...selectedIds.value];
+      if (!ids.length) return;
+      if (!confirm(`将选中的 ${ids.length} 个文件移至回收站？`)) return;
+      let ok = 0, fail = 0;
+      for (const id of ids) {
+        try { await api(`/files/${id}`, { method: "DELETE" }); ok++; }
+        catch { fail++; }
+      }
+      showToast(`已移至回收站 ${ok} 个${fail ? `（失败 ${fail}）` : ""}`, fail ? "error" : "success");
+      clearSelection();
+      loadFiles(filePagination.page);
+      loadStorage();
+    }
+
+    async function doBatchDownload() {
+      const ids = [...selectedIds.value];
+      if (!ids.length) return;
+      for (const id of ids) {
+        const f = files.value.find(x => x.file_id === id);
+        if (f) await doDownload(f);
+      }
+      clearSelection();
+    }
+
+    async function doBatchRestore() {
+      const ids = [...selectedIds.value];
+      if (!ids.length) return;
+      let ok = 0, fail = 0;
+      for (const id of ids) {
+        try { await api(`/files/${id}/restore`, { method: "POST" }); ok++; }
+        catch { fail++; }
+      }
+      showToast(`已恢复 ${ok} 个${fail ? `（失败 ${fail}）` : ""}`, fail ? "error" : "success");
+      clearSelection();
+      loadTrash();
+      loadStorage();
+    }
+
+    async function doBatchPurge() {
+      const ids = [...selectedIds.value];
+      if (!ids.length) return;
+      if (!confirm(`彻底删除选中的 ${ids.length} 个文件？此操作不可恢复。`)) return;
+      let ok = 0, fail = 0;
+      for (const id of ids) {
+        try { await api(`/files/${id}/purge`, { method: "DELETE" }); ok++; }
+        catch { fail++; }
+      }
+      showToast(`已彻底删除 ${ok} 个${fail ? `（失败 ${fail}）` : ""}`, fail ? "error" : "success");
+      clearSelection();
+      loadTrash();
+      loadStorage();
+    }
+
     // ===== Storage quota =====
     async function loadStorage() {
       try {
@@ -720,6 +831,7 @@ const app = createApp({
 
     // ===== Page Watcher =====
     watch(currentPage, (page) => {
+      clearSelection();
       nextTick(() => {
         if (typeof lucide !== "undefined") lucide.createIcons();
       });
@@ -752,6 +864,9 @@ const app = createApp({
       recTab, recommendFiles,
       logs,
       storageInfo, recentFiles, trashFiles,
+      sortKey, sortDir, toggleSort, sortedFiles,
+      isSelected, toggleSelect, toggleSelectAll, clearSelection, selectionCount,
+      doBatchDelete, doBatchDownload, doBatchRestore, doBatchPurge,
       showToast, doLogin, doRegister, doLogout,
       loadFiles, goPage, doUpload, doDownload, doDelete, doGenerateSummary, doPreview,
       switchFileView, loadRelatedFiles,

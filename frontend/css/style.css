@@ -563,11 +563,56 @@ h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; color: var(--ink);
   font-family: var(--mono);
   white-space: nowrap;
 }
-.file-table th::after {
-  content: " ▾"; color: var(--ink-faint); font-size: 8px;
-  margin-left: 4px;
+/* Default header has no caret; sortable table renders its own */
+.file-table.sortable th { cursor: pointer; user-select: none; transition: color var(--transition); }
+.file-table.sortable th:hover:not(.no-sort):not(.col-check) { color: var(--ink); }
+.file-table.sortable th.no-sort, .file-table.sortable th.col-check { cursor: default; }
+.file-table.sortable th.sorted { color: var(--vermillion); }
+.sort-caret {
+  display: inline-block; width: 10px; margin-left: 4px;
+  color: var(--vermillion); font-size: 10px; font-weight: 700;
 }
-.file-table th:last-child::after { content: ""; }
+
+/* Checkbox column */
+.col-check { width: 36px; padding-right: 0 !important; }
+.col-check input[type="checkbox"] {
+  width: 14px; height: 14px; cursor: pointer;
+  accent-color: var(--vermillion);
+  vertical-align: middle;
+}
+.file-table tbody tr.row-selected {
+  background: rgba(176,58,35,0.07);
+}
+.file-table tbody tr.row-selected td:first-child {
+  box-shadow: inset 3px 0 0 var(--vermillion);
+}
+
+/* Batch toolbar */
+.batch-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px;
+  background: var(--ink);
+  color: var(--paper-soft);
+  margin-bottom: 12px;
+  border-left: 4px solid var(--vermillion);
+  animation: rise 0.25s cubic-bezier(.2,.7,.2,1) both;
+}
+.batch-count {
+  font-family: var(--mono); font-size: 11px;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--paper-soft);
+}
+.batch-count b { color: var(--ochre); font-weight: 700; padding: 0 3px; }
+.batch-actions { display: flex; gap: 8px; }
+.batch-actions .btn-sm {
+  background: transparent; border-color: rgba(245,239,225,0.4);
+  color: var(--paper-soft);
+}
+.batch-actions .btn-sm:hover {
+  background: var(--paper-soft); color: var(--ink); border-color: var(--paper-soft);
+}
+.batch-actions .btn-sm.btn-danger { border-color: rgba(245,158,140,0.6); color: #ffb4a3; }
+.batch-actions .btn-sm.btn-danger:hover { background: var(--red); color: var(--paper-soft); border-color: var(--red); }
 
 .file-table td {
   padding: 14px 18px; font-size: 13.5px;
