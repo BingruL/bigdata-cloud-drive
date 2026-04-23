@@ -97,8 +97,8 @@ class StatsService:
         }
 
     def get_hot_files(self, top_n=10):
-        """热门文件排行（按下载次数）"""
-        files = self._get_all_files()
+        """热门文件排行（按下载次数，排除回收站文件）"""
+        files = [f for f in self._get_all_files() if f.get("deleted") != "1"]
         for f in files:
             f["downloads_int"] = int(f.get("downloads", 0))
         files.sort(key=lambda x: x["downloads_int"], reverse=True)

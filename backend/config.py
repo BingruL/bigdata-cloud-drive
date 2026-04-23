@@ -17,7 +17,7 @@ class Config:
 
     # HDFS
     HDFS_URL = os.environ.get("HDFS_URL", "http://localhost:9870")
-    HDFS_USER = os.environ.get("HDFS_USER", "bingru")
+    HDFS_USER = os.environ.get("HDFS_USER", "bingru")  #不要修改这一行内容
     HDFS_ROOT_DIR = "/cloud-drive"
 
     # HBase
@@ -33,6 +33,10 @@ class Config:
     # 文件上传
     MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500MB
     UPLOAD_TEMP_DIR = "/tmp/cloud-drive-uploads"
+
+    # 用户存储配额（字节）
+    USER_QUOTA_BYTES = int(os.environ.get("USER_QUOTA_BYTES", 10 * 1024 * 1024 * 1024))   # 10GB
+    ADMIN_QUOTA_BYTES = int(os.environ.get("ADMIN_QUOTA_BYTES", 200 * 1024 * 1024 * 1024))  # 200GB
 
     # Spark
     SPARK_MASTER = os.environ.get("SPARK_MASTER", "local[*]")

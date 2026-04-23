@@ -40,6 +40,17 @@ def upload_file():
     if not file_ext:
         file_ext = "unknown"
 
+    # 配额检查：统计当前用户已占用空间（含回收站）
+    quota = config.ADMIN_QUOTA_BYTES if g.current_role == "admin" else config.USER_QUOTA_BYTES
+    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES, include_deleted=True)
+    used = sum(int(f.get("size", 0) or 0) for f in all_files if f.get("owner") == g.current_user)
+    if used + file_size > quota:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        return jsonify({
+            "error": f"存储空间不足：已用 {used // (1024*1024)} MB / 配额 {quota // (1024*1024)} MB",
+        }), 413
+
     try:
         # 上传到 HDFS
         hdfs_path = hdfs.upload_file(
@@ -130,6 +141,89 @@ def list_files():
     return jsonify(result)
 
 
+@file_bp.route("/recent", methods=["GET"])
+@login_required
+def recent_files():
+    """
+    最近访问：聚合当前用户的 download / preview 日志，取每个文件的最近一次访问时间，按时间倒序返回
+    """
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+
+    limit = int(request.args.get("limit", 30))
+    logs = hbase.get_logs(config.HBASE_TABLE_LOGS, username=g.current_user, limit=2000)
+
+    # 聚合每个 file_id 的最近一次 download/preview 时间
+    last_access = {}
+    access_count = {}
+    for log in logs:
+        action = log.get("action", "")
+        if action not in ("download", "preview"):
+            continue
+        file_id = log.get("detail", "")
+        if not file_id:
+            continue
+        ts = int(log.get("timestamp", "0") or 0)
+        if file_id not in last_access or ts > last_access[file_id]:
+            last_access[file_id] = ts
+        access_count[file_id] = access_count.get(file_id, 0) + 1
+
+    # 按时间倒序
+    sorted_ids = sorted(last_access.items(), key=lambda x: x[1], reverse=True)
+
+    files = []
+    for file_id, ts in sorted_ids:
+        meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
+        if not meta or meta.get("deleted") == "1":
+            continue
+        meta["last_access"] = str(ts)
+        meta["access_count"] = access_count.get(file_id, 0)
+        files.append(meta)
+        if len(files) >= limit:
+            break
+
+    return jsonify({"files": files, "total": len(files)})
+
+
+@file_bp.route("/trash", methods=["GET"])
+@login_required
+def list_trash():
+    """回收站：已软删除的文件列表"""
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+
+    page = int(request.args.get("page", 1))
+    page_size = int(request.args.get("page_size", config.DEFAULT_PAGE_SIZE))
+    owner = g.current_user if g.current_role != "admin" else None
+
+    result = hbase.list_files(
+        config.HBASE_TABLE_FILES,
+        owner=owner, page=page, page_size=page_size,
+        only_deleted=True,
+    )
+    return jsonify(result)
+
+
+@file_bp.route("/<file_id>/restore", methods=["POST"])
+@login_required
+def restore_file(file_id):
+    """从回收站恢复文件"""
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+
+    meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
+    if not meta:
+        return jsonify({"error": "文件不存在"}), 404
+    if g.current_role != "admin" and meta.get("owner") != g.current_user:
+        return jsonify({"error": "无权操作此文件"}), 403
+    if meta.get("deleted") != "1":
+        return jsonify({"error": "该文件未在回收站中"}), 400
+
+    hbase.restore_file(config.HBASE_TABLE_FILES, file_id)
+    hbase.add_log(config.HBASE_TABLE_LOGS, g.current_user, "restore", file_id)
+    return jsonify({"message": "文件已恢复"})
+
+
 @file_bp.route("/<file_id>", methods=["GET"])
 @login_required
 def get_file_info(file_id):
@@ -194,7 +288,33 @@ def download_file(file_id):
 @file_bp.route("/<file_id>", methods=["DELETE"])
 @login_required
 def delete_file(file_id):
-    """文件删除"""
+    """文件软删除（移至回收站，HDFS 文件保留）"""
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+
+    meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
+    if not meta:
+        return jsonify({"error": "文件不存在"}), 404
+
+    if g.current_role != "admin" and meta.get("owner") != g.current_user:
+        return jsonify({"error": "无权删除此文件"}), 403
+
+    if meta.get("deleted") == "1":
+        return jsonify({"error": "文件已在回收站中"}), 400
+
+    try:
+        hbase.soft_delete_file(config.HBASE_TABLE_FILES, file_id)
+        hbase.add_log(config.HBASE_TABLE_LOGS, g.current_user, "delete", file_id)
+        return jsonify({"message": "文件已移至回收站"})
+    except Exception as e:
+        current_app.logger.error(f"文件软删除失败: {e}")
+        return jsonify({"error": f"删除失败: {str(e)}"}), 500
+
+
+@file_bp.route("/<file_id>/purge", methods=["DELETE"])
+@login_required
+def purge_file(file_id):
+    """彻底删除（从 HDFS + HBase 永久移除，仅能对已在回收站的文件操作）"""
     config = current_app.config["APP_CONFIG"]
     hbase = current_app.config["HBASE_SERVICE"]
     hdfs = current_app.config["HDFS_SERVICE"]
@@ -203,30 +323,24 @@ def delete_file(file_id):
     if not meta:
         return jsonify({"error": "文件不存在"}), 404
 
-    # 权限检查
     if g.current_role != "admin" and meta.get("owner") != g.current_user:
-        return jsonify({"error": "无权删除此文件"}), 403
+        return jsonify({"error": "无权操作此文件"}), 403
+    if meta.get("deleted") != "1":
+        return jsonify({"error": "请先将文件移至回收站"}), 400
 
     try:
-        # 1. 删除 HDFS 文件
         hdfs_path = meta.get("hdfs_path")
         if hdfs_path:
-            hdfs.delete_file(hdfs_path)
-
-        # 2. 删除 HBase 元数据
+            try:
+                hdfs.delete_file(hdfs_path)
+            except Exception as e:
+                current_app.logger.warning(f"HDFS 文件删除失败（继续清理元数据）: {e}")
         hbase.delete_file_meta(config.HBASE_TABLE_FILES, file_id)
-
-        # 3. 记录日志
-        hbase.add_log(
-            config.HBASE_TABLE_LOGS, g.current_user,
-            "delete", file_id
-        )
-
-        return jsonify({"message": "文件已删除"})
-
+        hbase.add_log(config.HBASE_TABLE_LOGS, g.current_user, "purge", file_id)
+        return jsonify({"message": "文件已彻底删除"})
     except Exception as e:
-        current_app.logger.error(f"文件删除失败: {e}")
-        return jsonify({"error": f"文件删除失败: {str(e)}"}), 500
+        current_app.logger.error(f"文件彻底删除失败: {e}")
+        return jsonify({"error": f"彻底删除失败: {str(e)}"}), 500
 
 
 @file_bp.route("/search", methods=["GET"])

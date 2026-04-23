@@ -142,12 +142,15 @@ class HBaseService:
             return True
 
     def list_files(self, table_name, owner=None, file_type=None,
-                   keyword=None, page=1, page_size=20):
+                   keyword=None, page=1, page_size=20,
+                   include_deleted=False, only_deleted=False):
         """
         列出文件（支持筛选）
         owner: 按所属用户筛选
         file_type: 按文件类型筛选
         keyword: 按文件名关键字搜索
+        include_deleted: 是否包含已软删除的文件（默认 False）
+        only_deleted: 只返回软删除的文件（回收站视图）
         """
         files = []
         with self._get_connection() as conn:
@@ -157,6 +160,13 @@ class HBaseService:
                 for k, v in data.items():
                     col = k.decode().split(":", 1)[1]
                     file_info[col] = v.decode()
+
+                is_deleted = file_info.get("deleted") == "1"
+                if only_deleted:
+                    if not is_deleted:
+                        continue
+                elif not include_deleted and is_deleted:
+                    continue
 
                 # 应用过滤条件
                 if owner and file_info.get("owner") != owner:
@@ -168,8 +178,11 @@ class HBaseService:
 
                 files.append(file_info)
 
-        # 按创建时间倒序
-        files.sort(key=lambda x: x.get("created_at", "0"), reverse=True)
+        # 回收站按删除时间倒序，其它按创建时间倒序
+        if only_deleted:
+            files.sort(key=lambda x: x.get("deleted_at", "0"), reverse=True)
+        else:
+            files.sort(key=lambda x: x.get("created_at", "0"), reverse=True)
 
         # 分页
         total = len(files)
@@ -196,6 +209,29 @@ class HBaseService:
                 b"meta:downloads": str(new_count).encode()
             })
             return new_count
+
+    def soft_delete_file(self, table_name, file_id):
+        """软删除：打上 deleted 标记（保留 HDFS 文件，可恢复）"""
+        with self._get_connection() as conn:
+            table = conn.table(table_name)
+            row = table.row(file_id.encode())
+            if not row:
+                return False
+            table.put(file_id.encode(), {
+                b"meta:deleted": b"1",
+                b"meta:deleted_at": str(int(time.time() * 1000)).encode(),
+            })
+            return True
+
+    def restore_file(self, table_name, file_id):
+        """从回收站恢复文件"""
+        with self._get_connection() as conn:
+            table = conn.table(table_name)
+            row = table.row(file_id.encode())
+            if not row:
+                return False
+            table.delete(file_id.encode(), columns=[b"meta:deleted", b"meta:deleted_at"])
+            return True
 
     def update_file_ai(self, table_name, file_id, summary=None, tags=None):
         """更新文件的 AI 摘要和标签"""
@@ -277,8 +313,12 @@ class HBaseService:
                 "updated_at": updated,
             }
 
-    def get_all_files_raw(self, table_name):
-        """获取所有文件元数据（供统计分析使用）"""
+    def get_all_files_raw(self, table_name, include_deleted=True):
+        """获取所有文件元数据（供统计分析使用）
+
+        include_deleted=True 时返回全部（含回收站中的文件，用于总存储统计）；
+        False 时排除软删除的文件（用于推荐、热门等面向用户的场景）。
+        """
         files = []
         with self._get_connection() as conn:
             table = conn.table(table_name)
@@ -287,5 +327,7 @@ class HBaseService:
                 for k, v in data.items():
                     col = k.decode().split(":", 1)[1]
                     file_info[col] = v.decode()
+                if not include_deleted and file_info.get("deleted") == "1":
+                    continue
                 files.append(file_info)
         return files

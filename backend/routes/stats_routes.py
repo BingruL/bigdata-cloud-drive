@@ -50,6 +50,53 @@ def storage_stats():
     return jsonify(stats.get_storage_stats())
 
 
+@stats_bp.route("/my-storage", methods=["GET"])
+@login_required
+def my_storage():
+    """当前用户存储配额与用量"""
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+
+    # 用户存储占用（含回收站，因为 HDFS 未真正清理）
+    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES, include_deleted=True)
+    used = 0
+    active_count = 0
+    trash_count = 0
+    trash_size = 0
+    for f in all_files:
+        if f.get("owner") != g.current_user:
+            continue
+        size = int(f.get("size", 0) or 0)
+        used += size
+        if f.get("deleted") == "1":
+            trash_count += 1
+            trash_size += size
+        else:
+            active_count += 1
+
+    quota = config.ADMIN_QUOTA_BYTES if g.current_role == "admin" else config.USER_QUOTA_BYTES
+    percent = min(100.0, round(used / quota * 100, 2)) if quota > 0 else 0
+
+    def _fmt(b):
+        b = int(b)
+        if b < 1024: return f"{b} B"
+        if b < 1024**2: return f"{b/1024:.1f} KB"
+        if b < 1024**3: return f"{b/1024**2:.1f} MB"
+        return f"{b/1024**3:.2f} GB"
+
+    return jsonify({
+        "used": used,
+        "quota": quota,
+        "percent": percent,
+        "used_readable": _fmt(used),
+        "quota_readable": _fmt(quota),
+        "active_count": active_count,
+        "trash_count": trash_count,
+        "trash_size": trash_size,
+        "trash_size_readable": _fmt(trash_size),
+    })
+
+
 @stats_bp.route("/hot-files", methods=["GET"])
 @login_required
 def hot_files():
@@ -103,7 +150,7 @@ def recommend_hot():
         return jsonify({"error": "AI 服务未配置"}), 503
 
     top_n = int(request.args.get("top", 10))
-    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES)
+    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES, include_deleted=False)
     result = ai.get_hot_files(all_files, top_n)
     return jsonify(result)
 
@@ -120,7 +167,7 @@ def recommend_personalized():
         return jsonify({"error": "AI 服务未配置"}), 503
 
     top_n = int(request.args.get("top", 10))
-    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES)
+    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES, include_deleted=False)
     all_logs = hbase.get_logs(config.HBASE_TABLE_LOGS, limit=10000)
 
     result = ai.get_personalized_recommendations(
@@ -141,7 +188,7 @@ def recommend_similar_users():
         return jsonify({"error": "AI 服务未配置"}), 503
 
     top_n = int(request.args.get("top", 10))
-    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES)
+    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES, include_deleted=False)
     all_logs = hbase.get_logs(config.HBASE_TABLE_LOGS, limit=10000)
 
     result = ai.get_similar_users_recommendations(
@@ -164,7 +211,7 @@ def file_relations():
         return jsonify({"error": "AI 服务未配置"}), 503
 
     # 普通用户只看自己的文件关系，管理员看全部
-    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES)
+    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES, include_deleted=False)
     if g.current_role != "admin":
         all_files = [f for f in all_files if f.get("owner") == g.current_user]
 
@@ -184,7 +231,7 @@ def related_files(file_id):
     if not ai:
         return jsonify({"error": "AI 服务未配置"}), 503
 
-    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES)
+    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES, include_deleted=False)
     if g.current_role != "admin":
         all_files = [f for f in all_files if f.get("owner") == g.current_user]
 
