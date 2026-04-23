@@ -13,6 +13,9 @@
 - **分布式计算**：Spark 批量统计分析 + 推荐计算
 - **AI 智能**：文件摘要/标签生成 + 个性化推荐
 - **数据可视化**：ECharts 仪表盘，多维度图表展示
+- **存储配额**：用户级存储配额与实时用量进度条
+- **回收站**：软删除机制，支持恢复与彻底删除
+- **最近访问**：基于操作日志聚合用户最近使用的文件
 
 **课程知识点覆盖：**
 
@@ -156,16 +159,24 @@ python run.py --port 8080
 
 ### 5.2 文件管理（第 3 章 存储）
 
-- **上传**：文件内容 → HDFS，元数据 → HBase
+- **上传**：文件内容 → HDFS，元数据 → HBase；上传前按用户配额校验
 - **下载**：HBase 查路径 → HDFS 读文件
-- **删除**：同步删除 HDFS 文件和 HBase 元数据
+- **删除**：软删除，仅在 HBase 元数据打上 `deleted` 标记，HDFS 文件保留
+- **回收站**：展示所有软删除文件，支持 **恢复** 或 **彻底删除**（后者才真正清理 HDFS）
+- **最近访问**：聚合操作日志中 `download` / `preview` 事件，按最近访问时间排序
 - **搜索**：按文件名、类型、时间范围筛选
 
 **HBase 表设计 `cloud_drive_files`：**
 
 | RowKey | 列族 meta |
 |--------|----------|
-| file_id (UUID) | filename, size, type, owner, hdfs_path, created_at, downloads, summary, tags |
+| file_id (UUID) | filename, size, type, owner, hdfs_path, created_at, downloads, summary, tags, **deleted, deleted_at** |
+
+### 5.2.1 存储配额
+
+- 普通用户默认配额 10 GB，管理员 200 GB（可通过 `USER_QUOTA_BYTES` / `ADMIN_QUOTA_BYTES` 环境变量覆盖）
+- 上传时实时校验用量（含回收站中文件），超额返回 HTTP 413
+- 前端侧边栏底部显示进度条，超 80% 变色提醒
 
 ### 5.3 统计分析（第 4/8 章 计算）
 
@@ -220,11 +231,15 @@ Dashboard 包含：
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/files/upload` | 上传文件 (multipart/form-data) |
-| GET  | `/api/files/list` | 文件列表（支持分页、筛选） |
+| POST | `/api/files/upload` | 上传文件 (multipart/form-data)，受配额限制 |
+| GET  | `/api/files/list` | 文件列表（支持分页、筛选，不含回收站） |
+| GET  | `/api/files/recent` | 当前用户最近访问的文件（按日志聚合） |
+| GET  | `/api/files/trash` | 回收站文件列表 |
 | GET  | `/api/files/<id>` | 获取文件详情 |
 | GET  | `/api/files/<id>/download` | 下载文件 |
-| DELETE | `/api/files/<id>` | 删除文件 |
+| DELETE | `/api/files/<id>` | 软删除（移入回收站） |
+| POST | `/api/files/<id>/restore` | 从回收站恢复 |
+| DELETE | `/api/files/<id>/purge` | 彻底删除（清理 HDFS + HBase） |
 | GET  | `/api/files/search` | 搜索文件 |
 | POST | `/api/files/<id>/summary` | 生成 AI 摘要 |
 
@@ -236,7 +251,8 @@ Dashboard 包含：
 | GET | `/api/stats/user-file-counts` | 用户文件数 |
 | GET | `/api/stats/file-type-distribution` | 类型分布 |
 | GET | `/api/stats/daily-upload-trend` | 上传趋势 |
-| GET | `/api/stats/storage` | 存储统计 |
+| GET | `/api/stats/storage` | 存储统计（全局） |
+| GET | `/api/stats/my-storage` | 当前用户配额与用量 |
 | GET | `/api/stats/hot-files` | 热门文件 |
 | GET | `/api/stats/recent-activity` | 最近动态 |
 | GET | `/api/stats/activity-heatmap` | 活跃热力图数据 |
