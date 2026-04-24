@@ -29,6 +29,9 @@ class Config:
     HBASE_TABLE_FILES = "cloud_drive_files"
     HBASE_TABLE_LOGS = "cloud_drive_logs"
     HBASE_TABLE_STATS = "cloud_drive_stats"
+    HBASE_TABLE_GROUPS = "cloud_drive_groups"
+    HBASE_TABLE_GROUP_MEMBERS = "cloud_drive_group_members"
+    HBASE_TABLE_USER_GROUPS = "cloud_drive_user_groups"
 
     # 文件上传
     MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500MB

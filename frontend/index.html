@@ -66,6 +66,12 @@
           <a :class="{active: currentPage === 'recent'}" @click="currentPage='recent'">
             <i data-lucide="clock"></i> <span>最近访问</span>
           </a>
+          <a :class="{active: currentPage === 'shared'}" @click="currentPage='shared'">
+            <i data-lucide="share-2"></i> <span>群组共享</span>
+          </a>
+          <a :class="{active: currentPage === 'groups'}" @click="currentPage='groups'">
+            <i data-lucide="users-round"></i> <span>我的群组</span>
+          </a>
           <a :class="{active: currentPage === 'trash'}" @click="currentPage='trash'">
             <i data-lucide="trash-2"></i> <span>回收站</span>
             <span v-if="storageInfo.trash_count" class="nav-badge">{{ storageInfo.trash_count }}</span>
@@ -194,6 +200,12 @@
                     <td class="filename-cell">
                       <span class="file-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</span>
                       <span>{{ f.filename }}</span>
+                      <span v-if="f.is_shared === '1'" class="share-pill" title="已分享到群组">
+                        <i data-lucide="share-2"></i> 已分享
+                      </span>
+                      <span v-else class="share-pill private" title="仅自己可见">
+                        <i data-lucide="lock"></i> 私有
+                      </span>
                     </td>
                     <td><span class="type-badge">{{ (f.type || '').toUpperCase() }}</span></td>
                     <td>{{ formatSize(f.size) }}</td>
@@ -206,6 +218,7 @@
                     <td class="actions-cell">
                       <button @click="doPreview(f)" class="btn-sm" title="预览"><i data-lucide="eye"></i></button>
                       <button @click="doDownload(f)" class="btn-sm" title="下载"><i data-lucide="download"></i></button>
+                      <button @click="openShareModal(f)" class="btn-sm" title="分享到群组"><i data-lucide="share-2"></i></button>
                       <button @click="doGenerateSummary(f)" class="btn-sm" title="AI 摘要"><i data-lucide="sparkles"></i></button>
                       <button @click="doDelete(f)" class="btn-sm btn-danger" title="删除"><i data-lucide="trash-2"></i></button>
                     </td>
@@ -487,12 +500,17 @@
 
         <!-- ========== 智能推荐 ========== -->
         <div v-if="currentPage === 'recommend'" class="page-recommend">
-          <div class="page-header"><h2>智能推荐</h2></div>
+          <div class="page-header">
+            <h2>群组智能推荐</h2>
+            <div class="header-actions">
+              <span class="header-caption">{{ recommendScopeLabel(recommendScope) }}</span>
+            </div>
+          </div>
 
           <div class="recommend-tabs">
-            <button :class="{active: recTab === 'hot'}" @click="recTab='hot'; loadRecommend()">热门推荐</button>
+            <button :class="{active: recTab === 'hot'}" @click="recTab='hot'; loadRecommend()">群组热门</button>
             <button :class="{active: recTab === 'personal'}" @click="recTab='personal'; loadRecommend()">个性化推荐</button>
-            <button :class="{active: recTab === 'similar'}" @click="recTab='similar'; loadRecommend()">相似用户推荐</button>
+            <button :class="{active: recTab === 'similar'}" @click="recTab='similar'; loadRecommend()">相似成员推荐</button>
           </div>
 
           <div class="recommend-list">
@@ -526,7 +544,168 @@
             </tbody>
           </table>
         </div>
+        <!-- ========== 群组共享（别人分享给我的文件） ========== -->
+        <div v-if="currentPage === 'shared'" class="page-shared">
+          <div class="page-header">
+            <h2>群组共享</h2>
+            <div class="header-actions">
+              <span class="header-caption">{{ sharedFiles.length }} 个文件 · 来自我所在的群组</span>
+            </div>
+          </div>
+          <p class="trash-hint">这里展示其他用户通过你所在群组分享给你的文件。要看到更多共享，请加入更多群组。</p>
+          <div class="file-table-wrap" v-if="sharedFiles.length">
+            <table class="file-table">
+              <thead>
+                <tr>
+                  <th>文件名</th>
+                  <th>类型</th>
+                  <th>大小</th>
+                  <th>所有者</th>
+                  <th>来自群组</th>
+                  <th>下载次数</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="f in sharedFiles" :key="f.file_id">
+                  <td class="filename-cell">
+                    <span class="file-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</span>
+                    <span>{{ f.filename }}</span>
+                  </td>
+                  <td><span class="type-badge">{{ (f.type || '').toUpperCase() }}</span></td>
+                  <td>{{ formatSize(f.size) }}</td>
+                  <td>{{ f.owner }}</td>
+                  <td>
+                    <span v-for="gid in (f.shared_via || [])" :key="gid" class="tag-badge">
+                      {{ (myGroups.find(g => g.group_id === gid) || {}).name || gid.slice(0,6) }}
+                    </span>
+                  </td>
+                  <td>{{ f.downloads || 0 }}</td>
+                  <td class="actions-cell">
+                    <button @click="doPreview(f)" class="btn-sm" title="预览"><i data-lucide="eye"></i></button>
+                    <button @click="doDownload(f)" class="btn-sm" title="下载"><i data-lucide="download"></i></button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-else class="empty-state" style="padding:72px 24px;text-align:center">
+            暂无群组成员分享给你的文件
+          </div>
+        </div>
+
+        <!-- ========== 我的群组 ========== -->
+        <div v-if="currentPage === 'groups'" class="page-groups">
+          <div class="page-header">
+            <h2>我的群组</h2>
+            <div class="header-actions">
+              <span class="header-caption">{{ myGroups.length }} 个群组</span>
+            </div>
+          </div>
+
+          <!-- 创建群组 -->
+          <div class="group-create-card">
+            <h3>创建新群组</h3>
+            <div class="group-create-form">
+              <input v-model="newGroupForm.name" type="text" placeholder="群组名称" maxlength="40">
+              <input v-model="newGroupForm.description" type="text" placeholder="群组描述（可选）" maxlength="120">
+              <button class="btn btn-primary" @click="doCreateGroup">
+                <i data-lucide="plus"></i> 创建
+              </button>
+            </div>
+          </div>
+
+          <div class="groups-layout">
+            <!-- 群组列表 -->
+            <div class="groups-list">
+              <div v-for="g in myGroups" :key="g.group_id"
+                   class="group-card"
+                   :class="{active: groupDetail && groupDetail.group_id === g.group_id}"
+                   @click="openGroupDetail(g.group_id)">
+                <div class="group-card-header">
+                  <span class="group-name">{{ g.name }}</span>
+                  <span v-if="isGroupOwner(g)" class="role-badge owner">群主</span>
+                  <span v-else class="role-badge">成员</span>
+                </div>
+                <div class="group-card-meta">
+                  <span><i data-lucide="users"></i> {{ g.member_count }} 人</span>
+                  <span class="text-muted">{{ g.description || '—' }}</span>
+                </div>
+              </div>
+              <div v-if="myGroups.length === 0" class="empty-state" style="padding:48px 24px;text-align:center">
+                你还没有加入任何群组
+              </div>
+            </div>
+
+            <!-- 群组详情 -->
+            <div class="group-detail" v-if="groupDetail">
+              <div class="group-detail-header">
+                <h3>{{ groupDetail.name }}</h3>
+                <button v-if="isGroupOwner(groupDetail) || userRole === 'admin'"
+                        class="btn-sm btn-danger" @click="doDeleteGroup(groupDetail.group_id)">
+                  <i data-lucide="x"></i> 解散群组
+                </button>
+              </div>
+              <p class="group-detail-desc">{{ groupDetail.description || '（无描述）' }}</p>
+
+              <div class="group-add-member" v-if="isGroupOwner(groupDetail) || userRole === 'admin'">
+                <input v-model="newMemberName" type="text" placeholder="输入用户名添加成员" @keyup.enter="doAddMember">
+                <button class="btn btn-primary btn-sm" @click="doAddMember">
+                  <i data-lucide="user-plus"></i> 添加成员
+                </button>
+              </div>
+
+              <h4 class="group-members-title">成员列表 ({{ (groupDetail.members || []).length }})</h4>
+              <div class="group-members">
+                <div v-for="m in (groupDetail.members || [])" :key="m.username" class="member-row">
+                  <span class="user-avatar sm">{{ m.username.charAt(0).toUpperCase() }}</span>
+                  <span class="member-name">{{ m.username }}</span>
+                  <span v-if="m.role === 'owner'" class="role-badge owner">群主</span>
+                  <span v-else class="role-badge">成员</span>
+                  <button v-if="m.role !== 'owner' && (isGroupOwner(groupDetail) || userRole === 'admin' || m.username === username)"
+                          @click="doRemoveMember(m.username)"
+                          class="btn-sm btn-danger member-action">
+                    {{ m.username === username ? '退出' : '移除' }}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="group-detail empty-detail" v-else>
+              <p class="text-muted">从左侧选择一个群组查看详情，或在上方创建新群组。</p>
+            </div>
+          </div>
+        </div>
+
       </main>
+    </div>
+
+    <!-- 分享文件到群组 弹窗 -->
+    <div v-if="shareModal" class="modal-overlay" @click.self="shareModal=null">
+      <div class="modal-card share-modal">
+        <h3>分享到群组</h3>
+        <p class="modal-filename">{{ shareModal.file.filename }}</p>
+        <p class="text-muted" style="font-size:13px;margin-bottom:12px">
+          勾选要分享到的群组。取消所有勾选并保存即恢复为私有。
+        </p>
+        <div class="share-group-list" v-if="myGroups.length">
+          <label v-for="g in myGroups" :key="g.group_id" class="share-group-item">
+            <input type="checkbox"
+                   :checked="isShareGroupChecked(g.group_id)"
+                   @change="toggleShareGroup(g.group_id)">
+            <div class="share-group-info">
+              <span class="share-group-name">{{ g.name }}</span>
+              <span class="share-group-meta">{{ g.member_count }} 人 · {{ g.description || '无描述' }}</span>
+            </div>
+          </label>
+        </div>
+        <div v-else class="empty-state" style="padding:24px;text-align:center">
+          你还没有加入任何群组。请先到「我的群组」创建或加入。
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" @click="shareModal=null">取消</button>
+          <button class="btn btn-primary" @click="confirmShare" :disabled="!myGroups.length">保存</button>
+        </div>
+      </div>
     </div>
 
     <!-- 全局 Toast -->

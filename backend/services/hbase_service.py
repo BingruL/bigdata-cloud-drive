@@ -313,6 +313,184 @@ class HBaseService:
                 "updated_at": updated,
             }
 
+    def update_file_sharing(self, table_name, file_id, is_shared, group_ids):
+        """更新文件的分享状态与目标群组列表
+
+        is_shared: bool；group_ids: list[str]（清空时传 []）。
+        把列存进 meta:is_shared / meta:shared_groups。
+        """
+        with self._get_connection() as conn:
+            table = conn.table(table_name)
+            row = table.row(file_id.encode())
+            if not row:
+                return False
+            shared_str = ",".join([g for g in group_ids if g]) if is_shared else ""
+            table.put(file_id.encode(), {
+                b"meta:is_shared": (b"1" if is_shared and shared_str else b"0"),
+                b"meta:shared_groups": shared_str.encode(),
+            })
+            return True
+
+    # ========== 群组：双表反向索引 ==========
+    # cloud_drive_groups        rowkey=group_id          列族 info
+    # cloud_drive_group_members rowkey={gid}#{username}  列族 info
+    # cloud_drive_user_groups   rowkey={username}#{gid}  列族 info
+    # 同一份成员关系按两种 RowKey 各存一份，"群→成员"和"用户→群"都能前缀扫描
+
+    def create_group(self, groups_table, members_table, user_groups_table,
+                     name, owner, description=""):
+        """创建群组并把 owner 写入两张成员索引表"""
+        group_id = uuid.uuid4().hex
+        now = str(int(time.time() * 1000))
+        with self._get_connection() as conn:
+            groups = conn.table(groups_table)
+            members = conn.table(members_table)
+            user_groups = conn.table(user_groups_table)
+
+            groups.put(group_id.encode(), {
+                b"info:name": name.encode(),
+                b"info:description": description.encode(),
+                b"info:owner": owner.encode(),
+                b"info:created_at": now.encode(),
+                b"info:member_count": b"1",
+            })
+            members.put(f"{group_id}#{owner}".encode(), {
+                b"info:role": b"owner",
+                b"info:joined_at": now.encode(),
+            })
+            user_groups.put(f"{owner}#{group_id}".encode(), {
+                b"info:group_id": group_id.encode(),
+                b"info:joined_at": now.encode(),
+            })
+        return {"group_id": group_id, "name": name, "owner": owner,
+                "description": description, "created_at": now, "member_count": 1}
+
+    def get_group(self, groups_table, group_id):
+        with self._get_connection() as conn:
+            row = conn.table(groups_table).row(group_id.encode())
+            if not row:
+                return None
+            return {
+                "group_id": group_id,
+                "name": row.get(b"info:name", b"").decode(),
+                "description": row.get(b"info:description", b"").decode(),
+                "owner": row.get(b"info:owner", b"").decode(),
+                "created_at": row.get(b"info:created_at", b"").decode(),
+                "member_count": int(row.get(b"info:member_count", b"0").decode() or 0),
+            }
+
+    def delete_group(self, groups_table, members_table, user_groups_table, group_id):
+        """解散群组：删 groups 行 + 扫成员前缀清两张索引表"""
+        with self._get_connection() as conn:
+            groups = conn.table(groups_table)
+            members = conn.table(members_table)
+            user_groups = conn.table(user_groups_table)
+
+            usernames = []
+            prefix = f"{group_id}#".encode()
+            for key, _ in members.scan(row_prefix=prefix):
+                k = key.decode()
+                username = k.split("#", 1)[1]
+                usernames.append(username)
+                members.delete(key)
+            for u in usernames:
+                user_groups.delete(f"{u}#{group_id}".encode())
+            groups.delete(group_id.encode())
+        return True
+
+    def add_group_member(self, groups_table, members_table, user_groups_table,
+                         group_id, username, role="member"):
+        """加成员：双写两张索引表，同步 member_count"""
+        now = str(int(time.time() * 1000))
+        with self._get_connection() as conn:
+            members = conn.table(members_table)
+            user_groups = conn.table(user_groups_table)
+            groups = conn.table(groups_table)
+
+            mkey = f"{group_id}#{username}".encode()
+            if members.row(mkey):
+                return False  # 已是成员
+            members.put(mkey, {
+                b"info:role": role.encode(),
+                b"info:joined_at": now.encode(),
+            })
+            user_groups.put(f"{username}#{group_id}".encode(), {
+                b"info:group_id": group_id.encode(),
+                b"info:joined_at": now.encode(),
+            })
+            grow = groups.row(group_id.encode())
+            current = int(grow.get(b"info:member_count", b"0").decode() or 0)
+            groups.put(group_id.encode(), {b"info:member_count": str(current + 1).encode()})
+        return True
+
+    def remove_group_member(self, groups_table, members_table, user_groups_table,
+                            group_id, username):
+        with self._get_connection() as conn:
+            members = conn.table(members_table)
+            user_groups = conn.table(user_groups_table)
+            groups = conn.table(groups_table)
+
+            mkey = f"{group_id}#{username}".encode()
+            if not members.row(mkey):
+                return False
+            members.delete(mkey)
+            user_groups.delete(f"{username}#{group_id}".encode())
+            grow = groups.row(group_id.encode())
+            current = int(grow.get(b"info:member_count", b"0").decode() or 0)
+            groups.put(group_id.encode(), {b"info:member_count": str(max(0, current - 1)).encode()})
+        return True
+
+    def list_group_members(self, members_table, group_id):
+        """前缀扫 {group_id}# 拿成员列表"""
+        result = []
+        prefix = f"{group_id}#".encode()
+        with self._get_connection() as conn:
+            for key, data in conn.table(members_table).scan(row_prefix=prefix):
+                k = key.decode()
+                username = k.split("#", 1)[1]
+                result.append({
+                    "username": username,
+                    "role": data.get(b"info:role", b"member").decode(),
+                    "joined_at": data.get(b"info:joined_at", b"").decode(),
+                })
+        return result
+
+    def list_user_groups(self, user_groups_table, groups_table, username):
+        """前缀扫 {username}# 拿用户加入的群组，再去 groups 表填详情"""
+        gids = []
+        prefix = f"{username}#".encode()
+        with self._get_connection() as conn:
+            ug = conn.table(user_groups_table)
+            for key, data in ug.scan(row_prefix=prefix):
+                gids.append(data.get(b"info:group_id", b"").decode())
+        return [g for g in (self.get_group(groups_table, gid) for gid in gids) if g]
+
+    def list_user_group_ids(self, user_groups_table, username):
+        """轻量版：只返回 group_id 列表（权限校验/推荐过滤用）"""
+        ids = []
+        prefix = f"{username}#".encode()
+        with self._get_connection() as conn:
+            for key, data in conn.table(user_groups_table).scan(row_prefix=prefix):
+                gid = data.get(b"info:group_id", b"").decode()
+                if gid:
+                    ids.append(gid)
+        return ids
+
+    def list_all_groups(self, groups_table):
+        """管理员视角：列出所有群组"""
+        result = []
+        with self._get_connection() as conn:
+            for key, data in conn.table(groups_table).scan():
+                result.append({
+                    "group_id": key.decode(),
+                    "name": data.get(b"info:name", b"").decode(),
+                    "description": data.get(b"info:description", b"").decode(),
+                    "owner": data.get(b"info:owner", b"").decode(),
+                    "created_at": data.get(b"info:created_at", b"").decode(),
+                    "member_count": int(data.get(b"info:member_count", b"0").decode() or 0),
+                })
+        return result
+
     def get_all_files_raw(self, table_name, include_deleted=True):
         """获取所有文件元数据（供统计分析使用）
 

@@ -27,6 +27,8 @@ HBASE_PORT = int(os.environ.get("HBASE_PORT", 9090))
 FILES_TABLE = "cloud_drive_files"
 LOGS_TABLE = "cloud_drive_logs"
 STATS_TABLE = "cloud_drive_stats"
+GROUPS_TABLE = "cloud_drive_groups"
+GROUP_MEMBERS_TABLE = "cloud_drive_group_members"
 
 
 def load_data(table_name):
@@ -66,14 +68,28 @@ def main():
     # 加载数据
     logs_raw = load_data(LOGS_TABLE)
     files_raw = load_data(FILES_TABLE)
+    members_raw = load_data(GROUP_MEMBERS_TABLE)
 
     download_logs = [l for l in logs_raw if l.get("action") == "download"]
-    print(f"下载日志: {len(download_logs)} 条, 文件总数: {len(files_raw)}")
+    # 仅在群组共享池里参与推荐计算
+    shared_files = [f for f in files_raw if f.get("is_shared") == "1"]
+    shared_ids = {f["_key"] for f in shared_files}
+    download_logs = [l for l in download_logs if l.get("detail") in shared_ids]
+    # 群组 → 成员集合（rowkey 形如 {gid}#{username}）
+    group_members = {}
+    for m in members_raw:
+        gid, _, username = m.get("_key", "").partition("#")
+        if gid and username:
+            group_members.setdefault(gid, set()).add(username)
+    print(f"下载日志(群组共享): {len(download_logs)} 条, 共享文件: {len(shared_files)}, "
+          f"群组数: {len(group_members)}")
 
-    if not download_logs or not files_raw:
-        print("数据不足，跳过推荐计算")
+    if not download_logs or not shared_files:
+        print("群组共享池为空或无下载行为，跳过推荐计算")
         spark.stop()
         return
+
+    files_raw = shared_files
 
     # ===== 1. 构建用户-文件交互矩阵 =====
     print("\n[1/3] 构建用户-文件交互矩阵...")
@@ -88,31 +104,34 @@ def main():
 
     print(f"  交互矩阵: {user_file_matrix.count()} 条记录")
 
-    # ===== 2. 计算用户相似度（基于 Jaccard） =====
-    print("[2/3] 计算用户相似度...")
+    # ===== 2. 计算用户相似度（按群组分别计算 Jaccard） =====
+    # 因为推荐被限定在"我所在群组的成员"之间，相似度也按群组分别算更精确，
+    # 且天然规避了"陌生人之间被算相似度"的隐私/语义问题。
+    print("[2/3] 按群组计算用户相似度...")
     user_files_set = (user_file_matrix
                       .groupBy("username")
                       .agg(F.collect_set("file_id").alias("files")))
+    user_files_map = {r["username"]: set(r["files"]) for r in user_files_set.collect()}
 
-    users = user_files_set.collect()
     similarities = []
-
-    for i in range(len(users)):
-        for j in range(i + 1, len(users)):
-            u1, f1 = users[i]["username"], set(users[i]["files"])
-            u2, f2 = users[j]["username"], set(users[j]["files"])
-            intersection = len(f1 & f2)
-            union = len(f1 | f2)
-            if union > 0:
-                jaccard = intersection / union
-                if jaccard > 0:
-                    similarities.append({
-                        "user1": u1, "user2": u2,
-                        "similarity": round(jaccard, 4),
-                    })
+    for gid, members in group_members.items():
+        users = sorted(members & user_files_map.keys())
+        for i in range(len(users)):
+            for j in range(i + 1, len(users)):
+                u1, u2 = users[i], users[j]
+                f1, f2 = user_files_map[u1], user_files_map[u2]
+                inter = len(f1 & f2)
+                union = len(f1 | f2)
+                if union > 0:
+                    jaccard = inter / union
+                    if jaccard > 0:
+                        similarities.append({
+                            "group_id": gid, "user1": u1, "user2": u2,
+                            "similarity": round(jaccard, 4),
+                        })
 
     save_stat("user_similarity_matrix", similarities)
-    print(f"  用户对数: {len(similarities)}")
+    print(f"  群组内用户对数: {len(similarities)}")
 
     # ===== 3. 计算文件热度评分 =====
     print("[3/3] 计算文件热度评分...")
