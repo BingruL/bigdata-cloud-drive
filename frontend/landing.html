@@ -259,6 +259,94 @@ a { color: inherit; text-decoration: none; }
   50% { background-position: 100% 50%; }
 }
 
+/* ====== Terminal preview ====== */
+.terminal {
+  width: 100%;
+  max-width: 620px;
+  margin: 32px auto 0;
+  text-align: left;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 14px;
+  background: rgba(8, 10, 22, .78);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  box-shadow:
+    0 24px 60px rgba(0,0,0,.45),
+    0 0 0 1px rgba(59,130,246,.06),
+    0 0 40px rgba(59,130,246,.12);
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(14px);
+  animation: termIn .7s ease .25s forwards;
+}
+@keyframes termIn {
+  to { opacity: 1; transform: translateY(0); }
+}
+.term-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+  background: rgba(255,255,255,.02);
+}
+.term-dot {
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.term-dot.red    { background: #ff5f56; }
+.term-dot.yellow { background: #ffbd2e; }
+.term-dot.green  { background: #27c93f; }
+.term-title {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: rgba(255,255,255,.35);
+  letter-spacing: .04em;
+  margin-right: 48px;
+}
+.term-body {
+  padding: 18px 22px 22px;
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+  line-height: 1.85;
+  color: rgba(255,255,255,.82);
+  min-height: 220px;
+  white-space: pre;
+}
+.term-line { display: block; }
+.term-line .prompt { color: var(--brand-2); margin-right: 8px; }
+.term-line .cmd    { color: #fff; }
+.term-line.ok      { color: rgba(139, 219, 160, .92); }
+.term-line.info    { color: rgba(170, 196, 255, .85); }
+.term-line.dim     { color: rgba(255,255,255,.45); }
+.term-line.arrow   { color: var(--brand-2); }
+.term-line .tag {
+  color: var(--brand-1);
+  background: rgba(59,130,246,.12);
+  border: 1px solid rgba(59,130,246,.25);
+  border-radius: 4px;
+  padding: 0 6px;
+  margin-right: 8px;
+  font-size: 11.5px;
+}
+.term-cursor {
+  display: inline-block;
+  width: 8px; height: 15px;
+  background: var(--brand-2);
+  vertical-align: -2px;
+  margin-left: 2px;
+  animation: blink 1.05s steps(1) infinite;
+  box-shadow: 0 0 8px rgba(6,182,212,.7);
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+@media (max-width: 600px) {
+  .terminal { max-width: 100%; margin-top: 24px; }
+  .term-body { font-size: 12px; padding: 14px 16px 18px; min-height: 200px; }
+  .term-title { font-size: 10.5px; margin-right: 36px; }
+}
+
 /* ====== Section scaffolding ====== */
 section.block {
   position: relative; z-index: 5;
@@ -540,6 +628,17 @@ footer a:hover { color: var(--fg); }
         </button>
         <a href="#features" class="btn-secondary">了解更多</a>
       </div>
+
+      <!-- Terminal preview -->
+      <div class="terminal" id="terminal" aria-hidden="true">
+        <div class="term-bar">
+          <span class="term-dot red"></span>
+          <span class="term-dot yellow"></span>
+          <span class="term-dot green"></span>
+          <span class="term-title">zsh — bigdata-cloud-drive</span>
+        </div>
+        <div class="term-body" id="termBody"></div>
+      </div>
     </div>
   </header>
 </div>
@@ -819,6 +918,101 @@ footer a:hover { color: var(--fg); }
       scrollTimer = setTimeout(() => nav.classList.remove('nav-hidden'), 220);
     }
     window.addEventListener('scroll', onScroll, { passive: true });
+  })();
+
+  /* Terminal typewriter */
+  (function() {
+    const body = document.getElementById('termBody');
+    if (!body) return;
+
+    // Each step: { html, delay (before), type: 'type' | 'instant' }
+    // For 'type', we typewriter-render the inner text characters (HTML tags still instant).
+    const lines = [
+      { cls: '', type: true,  html: '<span class="prompt">$</span><span class="cmd">python run.py --seed</span>' },
+      { cls: 'dim',  type: false, html: 'Initializing BigData Cloud Drive …' },
+      { cls: 'info', type: false, html: '<span class="tag">HBASE</span>connecting thrift @ localhost:9090' },
+      { cls: 'ok',   type: false, html: '✓ cloud_drive_users · files · logs · stats  (4/4 ready)' },
+      { cls: 'info', type: false, html: '<span class="tag">HDFS</span>checking namenode @ localhost:9870' },
+      { cls: 'ok',   type: false, html: '✓ /cloud-drive/files  namespace ok' },
+      { cls: 'info', type: false, html: '<span class="tag">SEED</span>loading demo dataset …' },
+      { cls: 'ok',   type: false, html: '✓ 5 users · 23 files · 142 log entries' },
+      { cls: 'arrow',type: false, html: '➜ serving on http://localhost:5000' },
+      { cls: '',     type: false, html: '<span class="prompt">$</span>' }
+    ];
+
+    let cursor;
+    function ensureCursor(parent) {
+      if (cursor) cursor.remove();
+      cursor = document.createElement('span');
+      cursor.className = 'term-cursor';
+      parent.appendChild(cursor);
+    }
+
+    function addLine() {
+      const div = document.createElement('span');
+      div.className = 'term-line';
+      body.appendChild(div);
+      return div;
+    }
+
+    async function typeInto(el, html, speed=28) {
+      // Parse source HTML, mirror its structure into el, and type text nodes char-by-char.
+      const source = document.createElement('span');
+      source.innerHTML = html;
+      el.innerHTML = '';
+      const slots = [];
+      (function mirror(srcNode, dstNode) {
+        for (const c of srcNode.childNodes) {
+          if (c.nodeType === 3) {
+            const tn = document.createTextNode('');
+            dstNode.appendChild(tn);
+            slots.push({ node: tn, full: c.nodeValue });
+          } else {
+            const ce = c.cloneNode(false);
+            dstNode.appendChild(ce);
+            mirror(c, ce);
+          }
+        }
+      })(source, el);
+      ensureCursor(el);
+      for (const slot of slots) {
+        for (let i = 0; i < slot.full.length; i++) {
+          slot.node.nodeValue += slot.full[i];
+          await sleep(speed);
+        }
+      }
+    }
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    async function run() {
+      await sleep(900);
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const el = addLine();
+        if (line.cls) el.classList.add(line.cls);
+        if (line.type) {
+          await typeInto(el, line.html, 30);
+        } else {
+          el.innerHTML = line.html;
+        }
+        ensureCursor(el);
+        // Pause between lines, longer after command and before result blocks
+        if (i === 0) await sleep(550);
+        else if (i === lines.length - 1) {}
+        else await sleep(260);
+      }
+    }
+
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          run();
+          io.disconnect();
+        }
+      });
+    }, { threshold: .2 });
+    io.observe(document.getElementById('terminal'));
   })();
 </script>
 </body>
