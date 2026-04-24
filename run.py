@@ -35,6 +35,9 @@ def init_hbase(config):
         config.HBASE_TABLE_FILES: {"meta": dict()},
         config.HBASE_TABLE_LOGS: {"log": dict()},
         config.HBASE_TABLE_STATS: {"data": dict()},
+        config.HBASE_TABLE_GROUPS: {"info": dict()},
+        config.HBASE_TABLE_GROUP_MEMBERS: {"info": dict()},
+        config.HBASE_TABLE_USER_GROUPS: {"info": dict()},
     }
     hbase.init_tables(table_config)
     print("[初始化] HBase 表创建完成")
@@ -107,7 +110,40 @@ def seed_test_data(hbase, hdfs, config):
         ("产品图片.jpg", "产品,摄影,展示"),
     ]
 
+    # 先创建示例群组（在文件之前，方便随机把部分文件标记为群组共享）
+    print("  创建示例群组...")
+    groups_t = config.HBASE_TABLE_GROUPS
+    members_t = config.HBASE_TABLE_GROUP_MEMBERS
+    user_groups_t = config.HBASE_TABLE_USER_GROUPS
+
+    seeded_groups = []
+    course_group = hbase.create_group(
+        groups_t, members_t, user_groups_t,
+        name="大数据课程组", owner="alice",
+        description="课程作业、参考资料共享",
+    )
+    for u in ("bob", "charlie"):
+        hbase.add_group_member(groups_t, members_t, user_groups_t, course_group["group_id"], u)
+    seeded_groups.append(course_group["group_id"])
+
+    ops_group = hbase.create_group(
+        groups_t, members_t, user_groups_t,
+        name="运维小组", owner="bob",
+        description="集群配置、运维脚本",
+    )
+    for u in ("diana",):
+        hbase.add_group_member(groups_t, members_t, user_groups_t, ops_group["group_id"], u)
+    seeded_groups.append(ops_group["group_id"])
+    print(f"    创建群组: 大数据课程组({course_group['group_id'][:8]}), 运维小组({ops_group['group_id'][:8]})")
+
+    # 群组 → 成员集合，决定文件 owner 是否能合法分享到该群组
+    group_to_members = {
+        course_group["group_id"]: {"alice", "bob", "charlie"},
+        ops_group["group_id"]: {"bob", "diana"},
+    }
+
     now_ts = int(time.time() * 1000)
+    shared_count = 0
     for i, (fname, tags) in enumerate(test_files):
         file_id = uuid.uuid4().hex
         owner = random.choice(test_users)
@@ -115,6 +151,16 @@ def seed_test_data(hbase, hdfs, config):
         size = random.randint(1024, 50 * 1024 * 1024)
         created = now_ts - random.randint(0, 7 * 86400 * 1000)
         downloads = random.randint(0, 50)
+
+        # 60% 概率分享到 owner 所在的某个群组
+        eligible = [gid for gid, mem in group_to_members.items() if owner in mem]
+        if eligible and random.random() < 0.6:
+            shared_groups = ",".join(random.sample(eligible, k=1))
+            is_shared = "1"
+            shared_count += 1
+        else:
+            shared_groups = ""
+            is_shared = "0"
 
         meta = {
             "filename": fname,
@@ -126,10 +172,12 @@ def seed_test_data(hbase, hdfs, config):
             "downloads": str(downloads),
             "summary": "",
             "tags": tags,
+            "is_shared": is_shared,
+            "shared_groups": shared_groups,
         }
         hbase.save_file_meta(config.HBASE_TABLE_FILES, file_id, meta)
 
-    print(f"  生成 {len(test_files)} 个文件记录")
+    print(f"  生成 {len(test_files)} 个文件记录（其中 {shared_count} 个已群组共享）")
 
     # 生成操作日志
     actions = ["login", "upload", "download", "download", "download"]

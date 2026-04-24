@@ -16,6 +16,7 @@ from .services.stats_service import StatsService
 from .routes.auth_routes import auth_bp
 from .routes.file_routes import file_bp
 from .routes.stats_routes import stats_bp, ai_bp
+from .routes.group_routes import group_bp
 
 # 配置日志
 logging.basicConfig(
@@ -71,6 +72,9 @@ def create_app():
             config.HBASE_TABLE_FILES: {"meta": dict()},
             config.HBASE_TABLE_LOGS: {"log": dict()},
             config.HBASE_TABLE_STATS: {"data": dict()},
+            config.HBASE_TABLE_GROUPS: {"info": dict()},
+            config.HBASE_TABLE_GROUP_MEMBERS: {"info": dict()},
+            config.HBASE_TABLE_USER_GROUPS: {"info": dict()},
         }
         hbase_service.init_tables(table_config)
         hdfs_service.init_directories()
@@ -84,6 +88,7 @@ def create_app():
     app.register_blueprint(file_bp)
     app.register_blueprint(stats_bp)
     app.register_blueprint(ai_bp)
+    app.register_blueprint(group_bp)
 
     # 前端页面路由
     @app.route("/")

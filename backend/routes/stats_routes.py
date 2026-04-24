@@ -138,63 +138,91 @@ def activity_heatmap():
 ai_bp = Blueprint("ai", __name__, url_prefix="/api/ai")
 
 
+def _group_scoped_corpus(hbase, config):
+    """返回 (候选文件池, 语料日志, 元信息)
+    候选文件池: is_shared=1 且与我所在群组有交集，并排除我自己的文件
+    语料日志: 仅来自我所在群组内成员的日志（含我自己）
+    admin 退化为全量
+    """
+    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES, include_deleted=False)
+    all_logs = hbase.get_logs(config.HBASE_TABLE_LOGS, limit=10000)
+
+    if g.current_role == "admin":
+        return all_files, all_logs, {"scope": "admin", "groups": [], "members": []}
+
+    my_gids = set(hbase.list_user_group_ids(config.HBASE_TABLE_USER_GROUPS, g.current_user))
+    if not my_gids:
+        return [], [], {"scope": "no_group", "groups": [], "members": []}
+
+    member_set = {g.current_user}
+    for gid in my_gids:
+        for m in hbase.list_group_members(config.HBASE_TABLE_GROUP_MEMBERS, gid):
+            member_set.add(m["username"])
+
+    candidates = []
+    for f in all_files:
+        if f.get("is_shared") != "1":
+            continue
+        shared = {x for x in (f.get("shared_groups") or "").split(",") if x}
+        if not (shared & my_gids):
+            continue
+        candidates.append(f)
+
+    scoped_logs = [l for l in all_logs if l.get("username") in member_set]
+    return candidates, scoped_logs, {
+        "scope": "group", "groups": sorted(my_gids), "members": sorted(member_set),
+    }
+
+
 @ai_bp.route("/recommend/hot", methods=["GET"])
 @login_required
 def recommend_hot():
-    """热门文件推荐"""
+    """群组热门：在我所在群组的共享文件池里按下载量排序"""
     config = current_app.config["APP_CONFIG"]
     ai = current_app.config.get("AI_SERVICE")
     hbase = current_app.config["HBASE_SERVICE"]
-
     if not ai:
         return jsonify({"error": "AI 服务未配置"}), 503
 
     top_n = int(request.args.get("top", 10))
-    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES, include_deleted=False)
-    result = ai.get_hot_files(all_files, top_n)
-    return jsonify(result)
+    files, _logs, meta = _group_scoped_corpus(hbase, config)
+    return jsonify({"scope": meta["scope"], "items": ai.get_hot_files(files, top_n)})
 
 
 @ai_bp.route("/recommend/personalized", methods=["GET"])
 @login_required
 def recommend_personalized():
-    """个性化推荐"""
+    """个性化推荐（语料限定为我所在群组的成员行为）"""
     config = current_app.config["APP_CONFIG"]
     ai = current_app.config.get("AI_SERVICE")
     hbase = current_app.config["HBASE_SERVICE"]
-
     if not ai:
         return jsonify({"error": "AI 服务未配置"}), 503
 
     top_n = int(request.args.get("top", 10))
-    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES, include_deleted=False)
-    all_logs = hbase.get_logs(config.HBASE_TABLE_LOGS, limit=10000)
-
-    result = ai.get_personalized_recommendations(
-        all_files, all_logs, g.current_user, top_n
-    )
-    return jsonify(result)
+    files, logs, meta = _group_scoped_corpus(hbase, config)
+    return jsonify({
+        "scope": meta["scope"],
+        "items": ai.get_personalized_recommendations(files, logs, g.current_user, top_n),
+    })
 
 
 @ai_bp.route("/recommend/similar-users", methods=["GET"])
 @login_required
 def recommend_similar_users():
-    """基于相似用户的协同过滤推荐"""
+    """基于相似用户的协同过滤推荐（限定群组内成员）"""
     config = current_app.config["APP_CONFIG"]
     ai = current_app.config.get("AI_SERVICE")
     hbase = current_app.config["HBASE_SERVICE"]
-
     if not ai:
         return jsonify({"error": "AI 服务未配置"}), 503
 
     top_n = int(request.args.get("top", 10))
-    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES, include_deleted=False)
-    all_logs = hbase.get_logs(config.HBASE_TABLE_LOGS, limit=10000)
-
-    result = ai.get_similar_users_recommendations(
-        all_files, all_logs, g.current_user, top_n
-    )
-    return jsonify(result)
+    files, logs, meta = _group_scoped_corpus(hbase, config)
+    return jsonify({
+        "scope": meta["scope"],
+        "items": ai.get_similar_users_recommendations(files, logs, g.current_user, top_n),
+    })
 
 
 # ========== 文件关系图谱路由 ==========

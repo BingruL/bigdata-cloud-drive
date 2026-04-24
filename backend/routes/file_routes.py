@@ -11,6 +11,31 @@ from ..auth.jwt_handler import login_required
 file_bp = Blueprint("files", __name__, url_prefix="/api/files")
 
 
+def _my_group_ids():
+    """当前用户所在的群组 id 集合（admin 视为全集，但调用方一般会先看 role）"""
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+    return set(hbase.list_user_group_ids(config.HBASE_TABLE_USER_GROUPS, g.current_user))
+
+
+def _can_access(meta):
+    """文件读取权限：
+    - admin 永远可读
+    - 文件主可读
+    - 文件 is_shared=1 且 shared_groups 与当前用户所在群组有交集时可读
+    """
+    if g.current_role == "admin":
+        return True
+    if meta.get("owner") == g.current_user:
+        return True
+    if meta.get("is_shared") != "1":
+        return False
+    shared = {x for x in (meta.get("shared_groups") or "").split(",") if x}
+    if not shared:
+        return False
+    return bool(shared & _my_group_ids())
+
+
 @file_bp.route("/upload", methods=["POST"])
 @login_required
 def upload_file():
@@ -68,6 +93,8 @@ def upload_file():
             "downloads": "0",
             "summary": "",
             "tags": "",
+            "is_shared": "0",
+            "shared_groups": "",
         }
         hbase.save_file_meta(config.HBASE_TABLE_FILES, file_id, meta)
 
@@ -235,8 +262,7 @@ def get_file_info(file_id):
     if not meta:
         return jsonify({"error": "文件不存在"}), 404
 
-    # 权限检查
-    if g.current_role != "admin" and meta.get("owner") != g.current_user:
+    if not _can_access(meta):
         return jsonify({"error": "无权访问此文件"}), 403
 
     return jsonify(meta)
@@ -254,7 +280,8 @@ def download_file(file_id):
     if not meta:
         return jsonify({"error": "文件不存在"}), 404
 
-    # 权限检查（允许下载其他用户公开的文件，此处简化为只要登录就可以下载）
+    if not _can_access(meta):
+        return jsonify({"error": "无权下载此文件"}), 403
     hdfs_path = meta.get("hdfs_path")
     if not hdfs_path:
         return jsonify({"error": "文件存储路径缺失"}), 500
@@ -399,7 +426,7 @@ def preview_file(file_id):
     if not meta:
         return jsonify({"error": "文件不存在"}), 404
 
-    if g.current_role != "admin" and meta.get("owner") != g.current_user:
+    if not _can_access(meta):
         return jsonify({"error": "无权访问此文件"}), 403
 
     hdfs_path = meta.get("hdfs_path")
@@ -484,3 +511,104 @@ def generate_file_summary(file_id):
     except Exception as e:
         current_app.logger.error(f"AI 摘要生成失败: {e}")
         return jsonify({"error": f"摘要生成失败: {str(e)}"}), 500
+
+
+# ========== 群组分享 ==========
+
+def _validate_share_groups(hbase, config, group_ids):
+    """要求 group_ids 都是当前用户所在的群组（admin 不限）"""
+    if g.current_role == "admin":
+        return True, None
+    my_gids = set(hbase.list_user_group_ids(config.HBASE_TABLE_USER_GROUPS, g.current_user))
+    bad = [gid for gid in group_ids if gid not in my_gids]
+    if bad:
+        return False, f"无权分享到以下群组: {', '.join(bad)}"
+    return True, None
+
+
+@file_bp.route("/<file_id>/share", methods=["POST"])
+@login_required
+def share_file(file_id):
+    """分享文件到指定群组（覆盖式：传入即为最新分享列表）"""
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+
+    meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
+    if not meta:
+        return jsonify({"error": "文件不存在"}), 404
+    if g.current_role != "admin" and meta.get("owner") != g.current_user:
+        return jsonify({"error": "仅文件所有者可分享"}), 403
+    if meta.get("deleted") == "1":
+        return jsonify({"error": "回收站中的文件无法分享"}), 400
+
+    body = request.get_json(silent=True) or {}
+    group_ids = [str(x).strip() for x in (body.get("groups") or []) if str(x).strip()]
+    if not group_ids:
+        return jsonify({"error": "至少选择一个群组"}), 400
+
+    ok, err = _validate_share_groups(hbase, config, group_ids)
+    if not ok:
+        return jsonify({"error": err}), 403
+
+    hbase.update_file_sharing(config.HBASE_TABLE_FILES, file_id, True, group_ids)
+    hbase.add_log(config.HBASE_TABLE_LOGS, g.current_user, "share", f"{file_id}:{','.join(group_ids)}")
+    return jsonify({"message": "已分享", "groups": group_ids})
+
+
+@file_bp.route("/<file_id>/unshare", methods=["POST"])
+@login_required
+def unshare_file(file_id):
+    """取消文件的全部分享，恢复为私有"""
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+
+    meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
+    if not meta:
+        return jsonify({"error": "文件不存在"}), 404
+    if g.current_role != "admin" and meta.get("owner") != g.current_user:
+        return jsonify({"error": "仅文件所有者可取消分享"}), 403
+
+    hbase.update_file_sharing(config.HBASE_TABLE_FILES, file_id, False, [])
+    hbase.add_log(config.HBASE_TABLE_LOGS, g.current_user, "unshare", file_id)
+    return jsonify({"message": "已取消分享"})
+
+
+@file_bp.route("/shared", methods=["GET"])
+@login_required
+def list_shared_with_me():
+    """列出我所在群组里、其他用户分享给我的文件"""
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+
+    page = int(request.args.get("page", 1))
+    page_size = int(request.args.get("page_size", config.DEFAULT_PAGE_SIZE))
+    page_size = min(page_size, config.MAX_PAGE_SIZE)
+
+    my_gids = set(hbase.list_user_group_ids(config.HBASE_TABLE_USER_GROUPS, g.current_user))
+    if not my_gids and g.current_role != "admin":
+        return jsonify({"files": [], "total": 0, "page": page,
+                        "page_size": page_size, "total_pages": 0})
+
+    all_files = hbase.get_all_files_raw(config.HBASE_TABLE_FILES, include_deleted=False)
+    matched = []
+    for f in all_files:
+        if f.get("owner") == g.current_user:
+            continue
+        if f.get("is_shared") != "1":
+            continue
+        shared = {x for x in (f.get("shared_groups") or "").split(",") if x}
+        if g.current_role == "admin" or (shared & my_gids):
+            # 透出 "通过哪些群组共享给我的"，方便前端展示
+            via = sorted(shared & my_gids) if g.current_role != "admin" else sorted(shared)
+            matched.append({**f, "shared_via": via})
+
+    matched.sort(key=lambda x: x.get("created_at", "0"), reverse=True)
+    total = len(matched)
+    start = (page - 1) * page_size
+    return jsonify({
+        "files": matched[start:start + page_size],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+    })

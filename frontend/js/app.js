@@ -43,6 +43,15 @@ const app = createApp({
     // ===== Recommend State =====
     const recTab = ref("hot");
     const recommendFiles = ref([]);
+    const recommendScope = ref("");
+
+    // ===== Group / Sharing State =====
+    const myGroups = ref([]);                // 我所在的群组列表
+    const groupDetail = ref(null);           // 当前查看的群组详情（含成员）
+    const newGroupForm = reactive({ name: "", description: "" });
+    const newMemberName = ref("");
+    const sharedFiles = ref([]);             // 群组共享给我的文件
+    const shareModal = ref(null);            // { file, selected: Set<gid> }
 
     // ===== Logs State =====
     const logs = ref([]);
@@ -650,10 +659,160 @@ const app = createApp({
           similar: "/ai/recommend/similar-users?top=10",
         };
         const data = await api(endpoints[recTab.value]);
-        recommendFiles.value = Array.isArray(data) ? data : [];
+        // 后端新接口返回 {scope, items}；旧版兼容 Array
+        if (Array.isArray(data)) {
+          recommendFiles.value = data;
+          recommendScope.value = "";
+        } else {
+          recommendFiles.value = data.items || [];
+          recommendScope.value = data.scope || "";
+        }
       } catch (e) {
         showToast("加载推荐失败: " + e.message, "error");
         recommendFiles.value = [];
+        recommendScope.value = "";
+      }
+    }
+
+    // ===== Groups =====
+    async function loadGroups() {
+      try {
+        const data = await api("/groups");
+        myGroups.value = data.groups || [];
+      } catch (e) {
+        showToast("加载群组失败: " + e.message, "error");
+      }
+    }
+
+    async function doCreateGroup() {
+      const name = (newGroupForm.name || "").trim();
+      if (!name) { showToast("群组名称不能为空", "error"); return; }
+      try {
+        await api("/groups", {
+          method: "POST",
+          body: JSON.stringify({ name, description: newGroupForm.description || "" }),
+        });
+        showToast("群组已创建", "success");
+        newGroupForm.name = "";
+        newGroupForm.description = "";
+        loadGroups();
+      } catch (e) {
+        showToast("创建失败: " + e.message, "error");
+      }
+    }
+
+    async function openGroupDetail(gid) {
+      try {
+        groupDetail.value = await api(`/groups/${gid}`);
+        newMemberName.value = "";
+      } catch (e) {
+        showToast("加载群组详情失败: " + e.message, "error");
+      }
+    }
+
+    async function doAddMember() {
+      const u = (newMemberName.value || "").trim();
+      if (!u || !groupDetail.value) return;
+      try {
+        await api(`/groups/${groupDetail.value.group_id}/members`, {
+          method: "POST",
+          body: JSON.stringify({ username: u }),
+        });
+        showToast("成员已添加", "success");
+        newMemberName.value = "";
+        openGroupDetail(groupDetail.value.group_id);
+        loadGroups();
+      } catch (e) {
+        showToast("添加失败: " + e.message, "error");
+      }
+    }
+
+    async function doRemoveMember(uname) {
+      if (!groupDetail.value) return;
+      const gid = groupDetail.value.group_id;
+      const isSelf = uname === username.value;
+      const msg = isSelf ? "确定退出该群组？" : `将 ${uname} 移出群组？`;
+      if (!confirm(msg)) return;
+      try {
+        await api(`/groups/${gid}/members/${encodeURIComponent(uname)}`, { method: "DELETE" });
+        showToast(isSelf ? "已退出群组" : "已移除成员", "success");
+        if (isSelf) {
+          groupDetail.value = null;
+          loadGroups();
+        } else {
+          openGroupDetail(gid);
+          loadGroups();
+        }
+      } catch (e) {
+        showToast("操作失败: " + e.message, "error");
+      }
+    }
+
+    async function doDeleteGroup(gid) {
+      if (!confirm("确定解散该群组？所有成员关系将被清理，已分享到该群组的文件会失去对组员的访问权。")) return;
+      try {
+        await api(`/groups/${gid}`, { method: "DELETE" });
+        showToast("群组已解散", "success");
+        groupDetail.value = null;
+        loadGroups();
+      } catch (e) {
+        showToast("解散失败: " + e.message, "error");
+      }
+    }
+
+    function isGroupOwner(g) {
+      return g && g.owner === username.value;
+    }
+
+    // ===== Sharing =====
+    async function loadShared() {
+      try {
+        const data = await api("/files/shared?page=1&page_size=100");
+        sharedFiles.value = data.files || [];
+      } catch (e) {
+        showToast("加载群组共享失败: " + e.message, "error");
+      }
+    }
+
+    async function openShareModal(f) {
+      // 打开前确保群组列表已加载
+      if (!myGroups.value.length) await loadGroups();
+      const current = new Set((f.shared_groups || "").split(",").filter(x => x));
+      shareModal.value = { file: f, selected: current, version: 0 };
+    }
+
+    function toggleShareGroup(gid) {
+      if (!shareModal.value) return;
+      const s = shareModal.value.selected;
+      if (s.has(gid)) s.delete(gid); else s.add(gid);
+      shareModal.value.version++;
+    }
+
+    function isShareGroupChecked(gid) {
+      if (!shareModal.value) return false;
+      shareModal.value.version;
+      return shareModal.value.selected.has(gid);
+    }
+
+    async function confirmShare() {
+      if (!shareModal.value) return;
+      const groups = [...shareModal.value.selected];
+      const fid = shareModal.value.file.file_id;
+      try {
+        if (groups.length === 0) {
+          await api(`/files/${fid}/unshare`, { method: "POST" });
+          showToast("已取消分享", "success");
+        } else {
+          await api(`/files/${fid}/share`, {
+            method: "POST",
+            body: JSON.stringify({ groups }),
+          });
+          showToast("分享设置已更新", "success");
+        }
+        shareModal.value = null;
+        loadFiles(filePagination.page);
+      } catch (e) {
+        showToast("操作失败: " + e.message, "error");
       }
     }
 
@@ -825,8 +984,21 @@ const app = createApp({
     }
 
     function actionLabel(action) {
-      const m = { login: "登录", register: "注册", upload: "上传", download: "下载", delete: "删除" };
+      const m = {
+        login: "登录", register: "注册", upload: "上传", download: "下载", delete: "删除",
+        share: "分享", unshare: "取消分享", restore: "恢复", purge: "彻底删除",
+        group_create: "创建群组", group_delete: "解散群组",
+        group_add_member: "加入成员", group_remove_member: "移除成员", group_leave: "退出群组",
+        preview: "预览",
+      };
       return m[action] || action;
+    }
+
+    function recommendScopeLabel(scope) {
+      if (scope === "no_group") return "你尚未加入任何群组，无可推荐内容。请先在「我的群组」中创建或加入群组。";
+      if (scope === "admin") return "管理员视角：基于全站文件计算";
+      if (scope === "group") return "基于你所在群组的共享文件池与成员行为";
+      return "";
     }
 
     // ===== Page Watcher =====
@@ -841,6 +1013,8 @@ const app = createApp({
       if (page === "dashboard") loadDashboard();
       if (page === "recommend") loadRecommend();
       if (page === "logs") loadLogs();
+      if (page === "groups") { loadGroups(); groupDetail.value = null; }
+      if (page === "shared") { loadShared(); loadGroups(); }
     });
 
     // ===== Init =====
@@ -861,7 +1035,11 @@ const app = createApp({
       previewModal, previewLoading,
       fileViewMode, graphData, graphLoading, selectedGraphFile, relatedFiles,
       dashboardData,
-      recTab, recommendFiles,
+      recTab, recommendFiles, recommendScope, recommendScopeLabel,
+      myGroups, groupDetail, newGroupForm, newMemberName, sharedFiles, shareModal,
+      loadGroups, doCreateGroup, openGroupDetail, doAddMember, doRemoveMember,
+      doDeleteGroup, isGroupOwner,
+      loadShared, openShareModal, toggleShareGroup, isShareGroupChecked, confirmShare,
       logs,
       storageInfo, recentFiles, trashFiles,
       sortKey, sortDir, toggleSort, sortedFiles,

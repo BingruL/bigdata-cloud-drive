@@ -10,8 +10,9 @@
 
 - **分布式存储**：文件内容存入 HDFS，元数据存入 HBase
 - **Token 认证**：JWT 无状态认证 + 角色权限控制
-- **分布式计算**：Spark 批量统计分析 + 推荐计算
-- **AI 智能**：文件摘要/标签生成 + 个性化推荐
+- **私有 + 群组分享**：文件默认私有，只有勾选分享到群组后，组内其他成员才可见/下载
+- **分布式计算**：Spark 批量统计分析 + 群组内协同过滤推荐
+- **AI 智能**：文件摘要/标签生成 + 群组智能推荐
 - **数据可视化**：ECharts 仪表盘，多维度图表展示
 - **存储配额**：用户级存储配额与实时用量进度条
 - **回收站**：软删除机制，支持恢复与彻底删除
@@ -41,7 +42,8 @@ bigdata-cloud-drive/
 │   │   └── jwt_handler.py      # JWT Token 认证模块
 │   ├── routes/
 │   │   ├── auth_routes.py      # 认证路由（注册/登录/刷新）
-│   │   ├── file_routes.py      # 文件管理路由（CRUD + 搜索）
+│   │   ├── file_routes.py      # 文件管理路由（CRUD + 搜索 + 群组分享）
+│   │   ├── group_routes.py     # 群组管理路由（创建/成员/解散）
 │   │   └── stats_routes.py     # 统计分析 & AI 推荐路由
 │   └── services/
 │       ├── hbase_service.py    # HBase 数据访问服务
@@ -126,10 +128,10 @@ python run.py --seed
 ```
 
 这会：
-1. 在 HBase 中创建 4 张表（users, files, logs, stats）
+1. 在 HBase 中创建 7 张表（users, files, logs, stats, groups, group_members, user_groups）
 2. 在 HDFS 中创建目录结构
 3. 创建管理员账户（admin / admin123）
-4. 生成 20 条测试文件记录和 100 条操作日志
+4. 生成 20 条测试文件记录、100 条操作日志、2 个示例群组（大数据课程组 / 运维小组）及部分群组共享文件
 5. 启动 Web 服务
 
 ### 4.2 正常启动
@@ -173,12 +175,20 @@ python run.py --port 8080
 - **回收站**：展示所有软删除文件，支持 **恢复** 或 **彻底删除**（后者才真正清理 HDFS）
 - **最近访问**：聚合操作日志中 `download` / `preview` 事件，按最近访问时间排序
 - **搜索**：按文件名、类型、时间范围筛选
+- **分享**：文件默认私有。文件主可将文件分享到自己所在的一个或多个群组，只有组内成员才能访问
 
 **HBase 表设计 `cloud_drive_files`：**
 
 | RowKey | 列族 meta |
 |--------|----------|
-| file_id (UUID) | filename, size, type, owner, hdfs_path, created_at, downloads, summary, tags, **deleted, deleted_at** |
+| file_id (UUID) | filename, size, type, owner, hdfs_path, created_at, downloads, summary, tags, deleted, deleted_at, **is_shared, shared_groups** |
+
+### 5.2.2 群组与分享模型
+
+- 所有读取他人文件的接口（download / preview / 详情）统一使用权限规则：`owner == me OR (is_shared == "1" AND 文件的 shared_groups 与我所在群组有交集) OR role == admin`
+- 群组采用"双表反向索引"的 HBase 经典建模（见第八节「HBase 数据建模思路」）
+- 任何登录用户都可创建群组并成为群主；群主可增删成员、解散群组；普通成员可查看成员列表、主动退出
+- 管理员可查看所有群组（`GET /api/groups?all=1`）
 
 ### 5.2.1 存储配额
 
@@ -217,10 +227,15 @@ Dashboard 包含：
 - 上传文本文件时自动调用 LLM 生成摘要和标签
 - 支持手动触发重新生成
 
-**智能推荐：**
-- 热门推荐：基于下载次数排序
-- 个性化推荐：分析用户偏好类型，推荐同类高热度文件
-- 协同过滤：Jaccard 相似度找到相似用户，推荐交叉文件
+**智能推荐（限定群组作用域）：**
+
+推荐的候选文件池 = 我所在群组的"已分享"文件；相似度/偏好语料 = 我所在群组成员的下载/预览行为。
+
+- 群组热门：候选池内按下载次数排序
+- 个性化推荐：基于我对候选池文件的类型偏好，推荐同类高热度文件
+- 相似成员推荐：在群组成员之间计算 Jaccard 相似度，推荐相似成员下载过而我没下过的文件
+
+Admin 视角下退化为全站（避免管理员视图被群组过滤）；未加入任何群组的普通用户，推荐会返回空并提示加入群组。
 
 ---
 
@@ -250,6 +265,20 @@ Dashboard 包含：
 | DELETE | `/api/files/<id>/purge` | 彻底删除（清理 HDFS + HBase） |
 | GET  | `/api/files/search` | 搜索文件 |
 | POST | `/api/files/<id>/summary` | 生成 AI 摘要 |
+| POST | `/api/files/<id>/share` | 分享文件到指定群组（body: `{groups: [gid,...]}`，覆盖式） |
+| POST | `/api/files/<id>/unshare` | 取消所有分享，恢复私有 |
+| GET  | `/api/files/shared` | 列出我所在群组里其他成员分享给我的文件 |
+
+### 群组接口（需认证）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/groups` | 创建群组（创建者自动成为群主） |
+| GET  | `/api/groups` | 我加入的群组；admin 加 `?all=1` 列出全部 |
+| GET  | `/api/groups/<id>` | 群组详情（含成员列表） |
+| DELETE | `/api/groups/<id>` | 解散群组（仅群主或 admin） |
+| POST | `/api/groups/<id>/members` | 添加成员（仅群主） |
+| DELETE | `/api/groups/<id>/members/<username>` | 移除成员（群主）/ 退出群组（本人） |
 
 ### 统计接口（需认证）
 
@@ -308,13 +337,60 @@ files_df.orderBy(desc("downloads_long")).limit(20)
 
 ### recommendation.py — 推荐计算
 
-1. 从日志中提取用户下载行为，构建用户-文件交互矩阵
-2. 计算用户间 Jaccard 相似度
-3. 综合下载总量和近期热度计算文件评分
+1. 扫描 `cloud_drive_files` 保留 `is_shared=1` 的共享文件，扫描 `cloud_drive_group_members` 构建"群组 → 成员集合"
+2. 从日志中提取**对共享文件**的下载行为，构建用户-文件交互矩阵
+3. **按群组分别**计算组内用户 Jaccard 相似度（天然避免跨群组陌生人相似度）
+4. 综合下载总量和近期热度计算共享文件评分
 
 ---
 
-## 九、注意事项
+## 九、HBase 数据建模思路（设计说明）
+
+本项目有几处刻意采用的 HBase 建模手法，用于展示"因 HBase 不支持 join、写模型固定、列族稀疏存储"所衍生出的设计权衡：
+
+### 9.1 双表反向索引（群组成员关系）
+
+"用户 ↔ 群组"是多对多关系。HBase 不支持 join，我们把同一份成员关系按两种 RowKey 各存一份：
+
+| 用途 | 表 | RowKey | 前缀扫描的含义 |
+|------|----|--------|------|
+| 查"群→成员" | `cloud_drive_group_members` | `{group_id}#{username}` | 前缀 `{gid}#` 得到该群全部成员 |
+| 查"用户→群" | `cloud_drive_user_groups`   | `{username}#{group_id}` | 前缀 `{user}#` 得到该用户加入的所有群 |
+
+写时双写，删时双删；这是 HBase 反向索引的经典做法。代价是写放大，收益是两个方向都能通过 `scan(row_prefix=...)` 在 O(前缀匹配行数) 内读取，避免了 "scan 全表 + 过滤" 的灾难。
+
+### 9.2 复合 RowKey + 前缀扫描
+
+`{gid}#{username}` 的复合键把"一对多"关系压缩到单行。对比关系数据库：
+
+- 关系型：`SELECT username FROM group_members WHERE group_id = ?` 靠索引支持
+- HBase：RowKey 天然按字典序排列，前缀 `{gid}#` 的所有行物理上相邻，直接 `scan(row_prefix=...)` 即可
+
+这也是为什么 RowKey 设计是 HBase 建模的第一优先级。
+
+### 9.3 稀疏列（文件分享元信息）
+
+在 `cloud_drive_files` 的 `meta` 列族下增加了 `is_shared` 和 `shared_groups` 两列。绝大多数私有文件 **不会写入这两列**（HBase 不存储空值，物理上不占空间）。
+
+- 关系型：加两列意味着所有行都要分配存储
+- HBase：稀疏列族天然对"少数行才有的字段"友好
+
+### 9.4 写放大与最终一致性
+
+双表反向索引需要双写（加成员两次 put、删成员两次 delete）。HBase 本身不支持多行事务，如果第一次 put 成功、第二次失败，两张索引表就会短暂不一致。
+
+生产级处理方案通常是：
+1. 业务层重试 + 幂等检测
+2. 引入 WAL/队列做最终一致性对账
+3. 重度场景使用 Phoenix / Omid 等 HBase 事务层
+
+本项目规模小，暂时接受这种权衡，但在课程答辩中可作为"大数据存储一致性"的讨论点。
+
+---
+
+## 十、注意事项
+
+---
 
 1. **HBase Thrift Server 必须启动**：Python 的 happybase 库通过 Thrift 协议连接 HBase
 2. **AI 功能为可选**：如果未配置 AI API，文件摘要功能不可用，但不影响其他功能
