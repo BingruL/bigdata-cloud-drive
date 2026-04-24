@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智能云盘 — 让每一份数据都被真正读懂</title>
+<meta name="theme-color" content="#4079ff">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Kotta+One&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.263.1/dist/umd/lucide.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #050510;
+  --fg: #ffffff;
+  --fg-dim: rgba(255,255,255,.72);
+  --fg-mute: rgba(255,255,255,.45);
+  --line: rgba(255,255,255,.1);
+  --line-soft: rgba(255,255,255,.06);
+  --card: rgba(255,255,255,.03);
+  --card-hi: rgba(255,255,255,.06);
+  --brand-1: #3b82f6;
+  --brand-2: #06b6d4;
+  --brand-3: #10b981;
+  --font-sans: "Inter", "Noto Sans SC", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-serif: "Kotta One", "Noto Serif SC", "Georgia", serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+a { color: inherit; text-decoration: none; }
+
+/* ====== Stage + backdrop ====== */
+.stage {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+}
+#warp {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  opacity: .85;
+  pointer-events: none;
+}
+.vignette {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 0%, rgba(5,5,16,0) 0%, rgba(5,5,16,.4) 60%, rgba(5,5,16,.95) 100%),
+    radial-gradient(ellipse 50% 60% at 50% 40%, rgba(59,130,246,.08), transparent 70%);
+}
+.floating-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(60px);
+  pointer-events: none;
+  z-index: 1;
+  animation: float 8s ease-in-out infinite;
+  will-change: transform;
+}
+.orb-1 { width: 300px; height: 300px; background: rgba(59,130,246,.15); top: 10%; left: 10%; animation-delay: 0s; }
+.orb-2 { width: 200px; height: 200px; background: rgba(6,182,212,.12); top: 60%; right: 15%; animation-delay: -2s; }
+.orb-3 { width: 150px; height: 150px; background: rgba(16,185,129,.1); bottom: 20%; left: 20%; animation-delay: -4s; }
+@keyframes float {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(30px, -20px); }
+}
+
+/* ====== Nav ====== */
+.nav {
+  position: relative; z-index: 10;
+  display: flex; align-items: center; justify-content: space-between;
+  max-width: 1200px; margin: 0 auto; padding: 20px 32px;
+}
+.brand {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(14px);
+  padding: 7px 16px 7px 8px;
+  border-radius: 100px;
+  font-weight: 600;
+  font-size: 15px;
+}
+.brand-logo {
+  width: 28px; height: 28px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--brand-1), var(--brand-2) 60%, var(--brand-3));
+  display: grid; place-items: center;
+  color: #050510; font-weight: 800; font-size: 12px;
+  font-family: var(--font-mono);
+  letter-spacing: -.02em;
+}
+.menu {
+  display: flex; gap: 2px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(14px);
+  padding: 5px;
+  border-radius: 100px;
+}
+.menu a {
+  padding: 8px 18px; border-radius: 100px;
+  font-size: 14px; color: var(--fg-dim);
+  font-weight: 500;
+  transition: .2s;
+}
+.menu a:hover { color: var(--fg); }
+.menu a.active { background: rgba(255,255,255,.08); color: var(--fg); }
+.nav-cta { display: flex; gap: 10px; align-items: center; }
+.lang {
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--line);
+  color: var(--fg-dim);
+  padding: 8px 14px;
+  border-radius: 100px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+}
+.btn-nav-primary {
+  background: linear-gradient(135deg, var(--brand-1), #5a93f0);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 100px;
+  font-weight: 600; font-size: 14px;
+  border: none; cursor: pointer;
+  box-shadow: 0 6px 20px rgba(59,130,246,.35);
+  transition: transform .15s;
+}
+.btn-nav-primary:hover { transform: translateY(-1px); }
+
+/* ====== Hero ====== */
+.hero {
+  position: relative; z-index: 5;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 60px 32px 120px;
+}
+.hero-content {
+  text-align: center;
+  max-width: 720px;
+  margin: 0 auto;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 1.25rem;
+  padding-top: 40px;
+}
+.badge {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .4rem 1rem;
+  border-radius: 100px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.04);
+  font-size: .8rem;
+  font-weight: 500;
+  color: rgba(255,255,255,.6);
+  letter-spacing: .04em;
+  backdrop-filter: blur(8px);
+}
+.hero-title {
+  font-family: var(--font-serif);
+  font-size: clamp(2rem, 4.5vw + .5rem, 3.5rem);
+  font-weight: 400;
+  color: #fff;
+  line-height: 1.2;
+  letter-spacing: -.02em;
+  text-align: center;
+  margin: 0;
+}
+.hero-desc {
+  font-size: clamp(.95rem, .8vw + .6rem, 1.125rem);
+  color: rgba(255,255,255,.72);
+  line-height: 1.7;
+  text-align: center;
+  max-width: 560px;
+  margin: 0 0 1rem;
+}
+.button-row {
+  display: flex; gap: 20px; margin-bottom: 48px; justify-content: center; flex-wrap: wrap;
+}
+.btn-primary {
+  background: #fff;
+  color: #050510;
+  border: none;
+  border-radius: 48px;
+  padding: .85rem 2rem;
+  cursor: pointer;
+  font-weight: 510;
+  font-size: .95rem;
+  display: inline-flex; align-items: center; gap: .5rem;
+  transition: transform .2s, box-shadow .2s;
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 20px 40px rgba(255,255,255,.18); }
+.btn-secondary {
+  background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.75);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 48px;
+  padding: .85rem 2rem;
+  cursor: pointer;
+  font-weight: 510;
+  font-size: .95rem;
+  display: inline-flex; align-items: center; gap: .5rem;
+  backdrop-filter: blur(8px);
+  transition: .2s;
+}
+.btn-secondary:hover { background: rgba(255,255,255,.1); color: #fff; }
+
+.stats-row {
+  display: flex; gap: 48px;
+  justify-content: center; flex-wrap: wrap;
+  margin-top: 20px;
+}
+.stat-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 24px;
+  background: rgba(255,255,255,.03);
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+}
+.stat-num {
+  font-family: var(--font-mono);
+  font-size: 2.25rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--brand-1), var(--brand-2), var(--brand-3));
+  background-size: 200% 200%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: gradientShift 3s ease infinite;
+}
+.stat-label {
+  font-size: 1.1rem;
+  color: rgba(255,255,255,.75);
+  font-weight: 500;
+  letter-spacing: .02em;
+}
+@keyframes gradientShift {
+  0%,100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+/* ====== Section scaffolding ====== */
+section.block {
+  position: relative; z-index: 5;
+  max-width: 1200px; margin: 0 auto;
+  padding: 100px 32px;
+}
+.section-head { text-align: center; margin-bottom: 56px; }
+.section-head h2 {
+  font-family: var(--font-serif);
+  font-size: clamp(1.8rem, 3vw + .5rem, 2.75rem);
+  font-weight: 400;
+  letter-spacing: -.015em;
+  line-height: 1.25;
+  color: #fff;
+  margin-bottom: 14px;
+}
+.section-head p {
+  color: rgba(255,255,255,.6);
+  font-size: 15px;
+  max-width: 560px;
+  margin: 0 auto;
+  line-height: 1.7;
+}
+
+/* ====== Bento ====== */
+.bento {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  grid-auto-rows: 180px;
+  gap: 14px;
+}
+.bento-card {
+  position: relative;
+  border: 1px solid var(--line-soft);
+  background:
+    radial-gradient(ellipse 100% 80% at 50% 0%, rgba(59,130,246,.06), transparent 70%),
+    var(--card);
+  border-radius: 20px;
+  padding: 24px;
+  overflow: hidden;
+  display: flex; flex-direction: column; justify-content: space-between;
+  transition: .3s;
+}
+.bento-card:hover {
+  border-color: rgba(59,130,246,.3);
+  background:
+    radial-gradient(ellipse 100% 80% at 50% 0%, rgba(59,130,246,.12), transparent 70%),
+    var(--card-hi);
+  transform: translateY(-2px);
+}
+.icon-wrap {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  background: rgba(59,130,246,.12);
+  border: 1px solid rgba(59,130,246,.2);
+  display: grid; place-items: center;
+  color: var(--brand-1);
+  margin-bottom: 16px;
+}
+.bento-card h3 {
+  font-family: "Noto Sans SC", var(--font-sans);
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #fff;
+}
+.bento-card p {
+  font-size: 13.5px;
+  color: rgba(255,255,255,.6);
+  line-height: 1.65;
+}
+.bento-card .tag {
+  position: absolute;
+  top: 20px; right: 20px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--fg-mute);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.feature-big {
+  grid-column: span 2; grid-row: span 2;
+  background:
+    radial-gradient(ellipse 80% 80% at 100% 0%, rgba(6,182,212,.14), transparent 60%),
+    radial-gradient(ellipse 80% 80% at 0% 100%, rgba(59,130,246,.12), transparent 60%),
+    var(--card);
+}
+.feature-big h3 { font-size: 26px; margin-bottom: 14px; }
+.feature-big p { font-size: 15px; max-width: 380px; }
+.feature-wide {
+  grid-column: span 2;
+  background:
+    radial-gradient(ellipse 60% 100% at 0% 50%, rgba(16,185,129,.1), transparent 60%),
+    var(--card);
+}
+.span-2 { grid-column: span 2; }
+
+.chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 18px; }
+.chip {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: rgba(255,255,255,.6);
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--line);
+}
+
+/* ====== Compare ====== */
+.compare {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  overflow: hidden;
+  background: rgba(255,255,255,.02);
+}
+.compare-row {
+  display: grid;
+  grid-template-columns: 180px 1fr 1fr;
+  border-bottom: 1px solid var(--line-soft);
+}
+.compare-row:last-child { border-bottom: 0; }
+.compare-row > div {
+  padding: 22px 28px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.compare-head {
+  background: rgba(255,255,255,.03);
+  color: rgba(255,255,255,.6);
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.compare-head .col-ours {
+  display: flex; align-items: center; gap: 8px;
+  background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  font-weight: 700;
+}
+.compare-head .col-ours::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--brand-1);
+  box-shadow: 0 0 12px var(--brand-1);
+}
+.compare-label { color: rgba(255,255,255,.7); font-weight: 600; }
+.compare-old { color: rgba(255,255,255,.4); }
+.compare-ours { color: rgba(255,255,255,.9); }
+
+/* ====== Bottom CTA ====== */
+.cta-bottom {
+  position: relative; z-index: 5;
+  max-width: 1200px;
+  margin: 40px auto 0;
+  padding: 100px 32px 60px;
+  text-align: center;
+  border-top: 1px solid var(--line-soft);
+}
+.cta-bottom h2 {
+  font-family: var(--font-serif);
+  font-size: clamp(1.8rem, 3.5vw + .5rem, 3rem);
+  font-weight: 400;
+  line-height: 1.3;
+  margin-bottom: 18px;
+  color: #fff;
+  letter-spacing: -.02em;
+}
+.cta-bottom p { color: rgba(255,255,255,.6); margin-bottom: 32px; font-size: 15px; }
+
+/* ====== Marquee ====== */
+.marquee {
+  position: relative; z-index: 5;
+  overflow: hidden;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
+  background: rgba(255,255,255,.015);
+  padding: 30px 0;
+  margin-top: 60px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+}
+.marquee-track {
+  display: flex; gap: 40px;
+  white-space: nowrap;
+  animation: marquee 30s linear infinite;
+  font-family: var(--font-serif);
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  font-weight: 400;
+  color: rgba(255,255,255,.15);
+  letter-spacing: .04em;
+  width: max-content;
+}
+.marquee-track span {
+  background: linear-gradient(135deg, rgba(255,255,255,.35), rgba(59,130,246,.4), rgba(6,182,212,.35));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* ====== Footer ====== */
+footer {
+  position: relative; z-index: 5;
+  max-width: 1200px; margin: 0 auto;
+  padding: 40px 32px;
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 13px;
+  color: var(--fg-mute);
+  flex-wrap: wrap; gap: 16px;
+}
+footer .foot-links { display: flex; gap: 24px; }
+footer a:hover { color: var(--fg); }
+
+@media (max-width: 900px) {
+  .menu { display: none; }
+  .bento { grid-template-columns: repeat(2, 1fr); grid-auto-rows: 170px; }
+  .feature-big, .feature-wide, .span-2 { grid-column: span 2; }
+  .feature-big { grid-row: span 2; }
+  .compare-row { grid-template-columns: 110px 1fr 1fr; }
+  .compare-row > div { padding: 16px; font-size: 13px; }
+  .stats-row { gap: 12px; }
+  .stat-item { padding: 12px 18px; }
+  .stat-num { font-size: 1.6rem; }
+  .stat-label { font-size: 1rem; }
+  .floating-orb { display: none; }
+}
+@media (max-width: 600px) {
+  .nav { padding: 14px 18px; }
+  .brand span:last-child { display: none; }
+  .hero { padding: 40px 20px 80px; }
+  .hero-content { padding-top: 20px; }
+}
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <canvas id="warp"></canvas>
+  <div class="vignette"></div>
+  <div class="floating-orb orb-1"></div>
+  <div class="floating-orb orb-2"></div>
+  <div class="floating-orb orb-3"></div>
+
+  <!-- Nav -->
+  <nav class="nav">
+    <div class="brand">
+      <span class="brand-logo">CD</span>
+      <span>CloudDrive</span>
+    </div>
+    <div class="menu">
+      <a href="#top" class="active">开始</a>
+      <a href="#features">特点</a>
+      <a href="#architecture">架构</a>
+      <a href="#compare">对比</a>
+      <a href="#faq">文档</a>
+    </div>
+    <div class="nav-cta">
+      <button class="lang">中 / EN</button>
+      <button class="btn-nav-primary" onclick="goApp()">立即体验</button>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <header class="hero" id="top">
+    <div class="hero-content">
+      <span class="badge">✦ AI-Native · HBase · HDFS · Spark</span>
+      <h1 class="hero-title">
+        让每一份数据<br>
+        都被真正读懂
+      </h1>
+      <p class="hero-desc">
+        存储、检索、分析、推荐，一个平台完成全部数据工作流。<br>
+        基于 HBase 与 HDFS 构建的分布式智能云盘。
+      </p>
+      <div class="button-row">
+        <button class="btn-primary" onclick="goApp()">
+          开始使用
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+        </button>
+        <a href="#features" class="btn-secondary">了解更多</a>
+      </div>
+      <div class="stats-row">
+        <div class="stat-item">
+          <span class="stat-num" id="num1">0</span>
+          <span class="stat-label">分布式节点</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-num" id="num2">0</span>
+          <span class="stat-label">文件已接入</span>
+        </div>
+      </div>
+    </div>
+  </header>
+</div>
+
+<!-- Features -->
+<section class="block" id="features">
+  <div class="section-head">
+    <h2>不止是云盘，更是数据平台</h2>
+    <p>把分布式存储的能力，装进一个人人都能上手的界面。</p>
+  </div>
+  <div class="bento">
+
+    <div class="bento-card feature-big">
+      <div>
+        <div class="icon-wrap"><i data-lucide="database"></i></div>
+        <h3>HBase 驱动的元数据引擎</h3>
+        <p>用户、文件、日志、统计四张表构成毫秒级检索底座，单集群可扩展至百亿行记录，RowKey 设计保证顺序扫描与热点均衡。</p>
+      </div>
+      <div class="chip-row">
+        <span class="chip">cloud_drive_users</span>
+        <span class="chip">cloud_drive_files</span>
+        <span class="chip">cloud_drive_logs</span>
+        <span class="chip">cloud_drive_stats</span>
+      </div>
+    </div>
+
+    <div class="bento-card">
+      <span class="tag">HDFS</span>
+      <div class="icon-wrap"><i data-lucide="hard-drive"></i></div>
+      <h3>海量文件稳如磐石</h3>
+      <p>WebHDFS 直连，三副本容灾，按用户隔离目录。</p>
+    </div>
+
+    <div class="bento-card">
+      <span class="tag">AI</span>
+      <div class="icon-wrap"><i data-lucide="sparkles"></i></div>
+      <h3>一键 AI 摘要</h3>
+      <p>文档上传即读懂，自动生成摘要与标签。</p>
+    </div>
+
+    <div class="bento-card feature-wide">
+      <div class="icon-wrap"><i data-lucide="network"></i></div>
+      <h3>文件关系图谱</h3>
+      <p>力导向可视化呈现文件与标签的关联网络，让散落的资料回到一张图里。</p>
+    </div>
+
+    <div class="bento-card">
+      <span class="tag">Spark</span>
+      <div class="icon-wrap"><i data-lucide="zap"></i></div>
+      <h3>批量分析</h3>
+      <p>spark-submit 驱动统计与推荐离线计算。</p>
+    </div>
+
+    <div class="bento-card">
+      <span class="tag">Dashboard</span>
+      <div class="icon-wrap"><i data-lucide="bar-chart-3"></i></div>
+      <h3>实时看板</h3>
+      <p>ECharts 驱动的多维分析视图。</p>
+    </div>
+
+    <div class="bento-card span-2">
+      <div class="icon-wrap"><i data-lucide="shield-check"></i></div>
+      <h3>企业级安全与审计</h3>
+      <p>JWT 鉴权、角色分离、全链路操作日志写入 HBase，可追溯任意一次上传、下载与删除。回收站与配额双重保护，永不丢失。</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- Architecture -->
+<section class="block" id="architecture">
+  <div class="section-head">
+    <h2>全栈大数据技术栈</h2>
+    <p>从存储层到应用层，每一层都选用业界标准组件。</p>
+  </div>
+  <div class="bento" style="grid-auto-rows: 150px;">
+    <div class="bento-card">
+      <div class="icon-wrap"><i data-lucide="layers"></i></div>
+      <h3>存储层</h3>
+      <p>HDFS + HBase + Thrift</p>
+    </div>
+    <div class="bento-card">
+      <div class="icon-wrap"><i data-lucide="cpu"></i></div>
+      <h3>计算层</h3>
+      <p>Spark 批处理 + Flume 流式采集</p>
+    </div>
+    <div class="bento-card">
+      <div class="icon-wrap"><i data-lucide="server"></i></div>
+      <h3>服务层</h3>
+      <p>Flask REST API + JWT</p>
+    </div>
+    <div class="bento-card">
+      <div class="icon-wrap"><i data-lucide="monitor"></i></div>
+      <h3>展示层</h3>
+      <p>Vue 3 SPA + ECharts</p>
+    </div>
+  </div>
+</section>
+
+<!-- Compare -->
+<section class="block" id="compare">
+  <div class="section-head">
+    <h2>为什么选择智能云盘</h2>
+    <p>对比传统文件管理工具，看看大数据原生云盘有何不同。</p>
+  </div>
+  <div class="compare">
+    <div class="compare-row compare-head">
+      <div></div>
+      <div>传统云盘</div>
+      <div class="col-ours">智能云盘</div>
+    </div>
+    <div class="compare-row">
+      <div class="compare-label">元数据存储</div>
+      <div class="compare-old">MySQL 单点瓶颈，千万级即吃力，扩容改表都成本高。</div>
+      <div class="compare-ours">HBase 分布式 KV，水平扩展至百亿行记录，毫秒级检索。</div>
+    </div>
+    <div class="compare-row">
+      <div class="compare-label">文件存储</div>
+      <div class="compare-old">对象存储黑盒，副本状态不可见，容灾完全托付云厂商。</div>
+      <div class="compare-ours">HDFS 三副本自托管，按用户隔离目录，副本与块可查。</div>
+    </div>
+    <div class="compare-row">
+      <div class="compare-label">数据分析</div>
+      <div class="compare-old">无内置分析能力，需要导出后再手工跑 SQL 或 Excel。</div>
+      <div class="compare-ours">Spark 批作业 + ECharts 实时看板，多维趋势开箱即用。</div>
+    </div>
+    <div class="compare-row">
+      <div class="compare-label">智能能力</div>
+      <div class="compare-old">需接入第三方插件或手动调用 ChatGPT，文件内容外传。</div>
+      <div class="compare-ours">内置 AI 摘要、自动标签，文件级 LLM 处理流水线。</div>
+    </div>
+    <div class="compare-row">
+      <div class="compare-label">智能推荐</div>
+      <div class="compare-old">只有按时间或目录排序，找历史文件全凭记忆。</div>
+      <div class="compare-ours">Spark 计算 Jaccard 相似度，基于行为推荐同类文件。</div>
+    </div>
+    <div class="compare-row">
+      <div class="compare-label">可观测性</div>
+      <div class="compare-old">日志散落在前后端，排查一次问题要翻好几个地方。</div>
+      <div class="compare-ours">Flume 实时汇聚 + HBase 日志表，任意操作一键追溯。</div>
+    </div>
+  </div>
+</section>
+
+<!-- Bottom CTA -->
+<section class="cta-bottom" id="faq">
+  <h2>准备好迎接你的<br>第一个分布式云盘体验了吗？</h2>
+  <p>测试账号 admin / admin123 · alice / 123456 立刻可用</p>
+  <button class="btn-primary" onclick="goApp()">
+    进入系统
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+  </button>
+</section>
+
+<!-- Marquee -->
+<div class="marquee">
+  <div class="marquee-track">
+    <span>UR ✦ SMART ✦ CLOUD ✦ DRIVE ✦ POWERED ✦ BY ✦ BIG ✦ DATA ✦ READY ✦ TO ✦ START ✦ YOUR ✦&nbsp;</span>
+    <span>UR ✦ SMART ✦ CLOUD ✦ DRIVE ✦ POWERED ✦ BY ✦ BIG ✦ DATA ✦ READY ✦ TO ✦ START ✦ YOUR ✦&nbsp;</span>
+  </div>
+</div>
+
+<footer>
+  <div>© 2026 BigData Cloud Drive · 大数据技术基础 期末项目</div>
+  <div class="foot-links">
+    <a href="#features">特点</a>
+    <a href="#architecture">架构</a>
+    <a href="#compare">对比</a>
+    <a href="https://github.com/" target="_blank">GitHub</a>
+  </div>
+</footer>
+
+<script>
+  function goApp() { window.location.href = "/app"; }
+  if (window.lucide) lucide.createIcons();
+
+  /* ============================================
+     Hyperspeed warp — Canvas 2D light streaks
+     Radial particles accelerating outward from center
+     ============================================ */
+  (function() {
+    const canvas = document.getElementById('warp');
+    const ctx = canvas.getContext('2d', { alpha: true });
+    let W, H, CX, CY, DPR;
+    const PARTICLES = 260;
+    const particles = [];
+    let running = true;
+
+    function resize() {
+      DPR = Math.min(window.devicePixelRatio || 1, 2);
+      const r = canvas.getBoundingClientRect();
+      W = canvas.width = r.width * DPR;
+      H = canvas.height = r.height * DPR;
+      canvas.style.width = r.width + 'px';
+      canvas.style.height = r.height + 'px';
+      CX = W / 2;
+      CY = H * 0.4;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    const HUES = [215, 200, 185, 168, 230]; // blue → cyan → teal range
+    function spawn(p) {
+      p.angle = Math.random() * Math.PI * 2;
+      p.dist = 20 + Math.random() * 40;
+      p.speed = 1 + Math.random() * 2.8;
+      p.len = 6 + Math.random() * 14;
+      p.hue = HUES[(Math.random() * HUES.length) | 0];
+      p.life = 0;
+      p.maxLife = 180 + Math.random() * 120;
+    }
+    for (let i = 0; i < PARTICLES; i++) {
+      const p = {};
+      spawn(p);
+      p.dist = Math.random() * Math.max(W, H) * 0.6;
+      particles.push(p);
+    }
+
+    function frame() {
+      if (!running) { requestAnimationFrame(frame); return; }
+      // Fade trail
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = 'rgba(5, 5, 16, 0.22)';
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.globalCompositeOperation = 'lighter';
+      const maxR = Math.hypot(Math.max(CX, W - CX), Math.max(CY, H - CY)) * 1.05;
+
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        const cos = Math.cos(p.angle), sin = Math.sin(p.angle);
+        const d0 = p.dist;
+        const accel = 1 + d0 / 400;
+        p.dist += p.speed * accel * DPR;
+        p.life++;
+        const d1 = p.dist;
+
+        const x1 = CX + cos * d0;
+        const y1 = CY + sin * d0;
+        const x2 = CX + cos * d1;
+        const y2 = CY + sin * d1;
+
+        // Brightness increases as it travels outward
+        const t = Math.min(1, d1 / maxR);
+        const alpha = 0.05 + t * 0.85;
+        const width = 0.5 + t * 1.8;
+
+        ctx.strokeStyle = `hsla(${p.hue}, 90%, ${55 + t*20}%, ${alpha})`;
+        ctx.lineWidth = width * DPR;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+
+        if (d1 > maxR || p.life > p.maxLife) spawn(p);
+      }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    document.addEventListener('visibilitychange', () => { running = !document.hidden; });
+  })();
+
+  /* Animated stat counters */
+  (function() {
+    const targets = [{ el: document.getElementById('num1'), to: 128, suffix: '+' },
+                     { el: document.getElementById('num2'), to: 10000, suffix: '+' }];
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (!e.isIntersecting) return;
+        targets.forEach(t => {
+          const start = performance.now(), dur = 1600;
+          function tick(now) {
+            const k = Math.min(1, (now - start) / dur);
+            const eased = 1 - Math.pow(1 - k, 3);
+            const v = Math.round(t.to * eased);
+            t.el.textContent = v.toLocaleString() + t.suffix;
+            if (k < 1) requestAnimationFrame(tick);
+          }
+          requestAnimationFrame(tick);
+        });
+        io.disconnect();
+      });
+    }, { threshold: .3 });
+    io.observe(document.querySelector('.stats-row'));
+  })();
+</script>
+</body>
+</html>

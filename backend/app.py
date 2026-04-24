@@ -87,7 +87,12 @@ def create_app():
 
     # 前端页面路由
     @app.route("/")
-    def index():
+    def landing():
+        return send_from_directory(app.static_folder, "landing.html")
+
+    @app.route("/app")
+    @app.route("/app/")
+    def app_entry():
         return send_from_directory(app.static_folder, "index.html")
 
     @app.route("/<path:path>")

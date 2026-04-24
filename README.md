@@ -49,7 +49,8 @@ bigdata-cloud-drive/
 │       ├── ai_service.py       # AI 摘要/推荐服务
 │       └── stats_service.py    # 统计计算服务
 ├── frontend/                   # 前端 Web 界面
-│   ├── index.html              # SPA 主页面
+│   ├── landing.html            # 炫酷引导页（/）- canvas 粒子背景 + bento 特性 + 对比表
+│   ├── index.html              # SPA 主页面（/app）
 │   ├── css/style.css           # 样式
 │   └── js/app.js               # Vue 3 应用逻辑
 ├── spark_jobs/                 # Spark 分析作业
@@ -141,6 +142,11 @@ python run.py --port 8080
 ### 4.3 访问系统
 
 浏览器打开 `http://localhost:5000`
+
+- `/` —— 产品引导页（hero + 特性 bento + 对比表），点击"开始使用"进入系统
+- `/app` —— 注册 / 登录页（SPA 主入口）
+
+测试账号：
 
 - 管理员：`admin` / `admin123`
 - 测试用户：`alice` / `123456`（或 bob, charlie, diana）
