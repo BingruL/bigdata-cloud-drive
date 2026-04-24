@@ -398,14 +398,37 @@ section.block {
   transform: translateY(-2px);
 }
 .icon-wrap {
+  --ic-h: 217; --ic-s: 91%; --ic-l: 62%;
   width: 40px; height: 40px;
   border-radius: 10px;
-  background: rgba(59,130,246,.12);
-  border: 1px solid rgba(59,130,246,.2);
+  background:
+    linear-gradient(135deg, hsla(var(--ic-h), var(--ic-s), var(--ic-l), .22), hsla(var(--ic-h), var(--ic-s), var(--ic-l), .08));
+  border: 1px solid hsla(var(--ic-h), var(--ic-s), var(--ic-l), .32);
   display: grid; place-items: center;
-  color: var(--brand-1);
+  color: hsl(var(--ic-h), var(--ic-s), calc(var(--ic-l) + 8%));
   margin-bottom: 16px;
+  box-shadow:
+    0 6px 16px hsla(var(--ic-h), var(--ic-s), var(--ic-l), .18),
+    inset 0 1px 0 hsla(var(--ic-h), var(--ic-s), 95%, .08);
+  transition: transform .25s ease, box-shadow .25s ease;
 }
+.bento-card:hover .icon-wrap {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow:
+    0 10px 22px hsla(var(--ic-h), var(--ic-s), var(--ic-l), .32),
+    inset 0 1px 0 hsla(var(--ic-h), var(--ic-s), 95%, .12);
+}
+.ic-amber   { --ic-h: 38;  --ic-s: 92%; --ic-l: 55%; }   /* HBase 元数据 */
+.ic-yellow  { --ic-h: 48;  --ic-s: 92%; --ic-l: 58%; }   /* HDFS 存储 */
+.ic-violet  { --ic-h: 265; --ic-s: 85%; --ic-l: 66%; }   /* AI */
+.ic-teal    { --ic-h: 172; --ic-s: 76%; --ic-l: 52%; }   /* 关系图谱 */
+.ic-orange  { --ic-h: 22;  --ic-s: 92%; --ic-l: 58%; }   /* Spark */
+.ic-green   { --ic-h: 152; --ic-s: 68%; --ic-l: 52%; }   /* Dashboard */
+.ic-emerald { --ic-h: 158; --ic-s: 72%; --ic-l: 48%; }   /* 安全审计 */
+.ic-blue    { --ic-h: 217; --ic-s: 91%; --ic-l: 62%; }   /* 存储层 */
+.ic-rose    { --ic-h: 350; --ic-s: 82%; --ic-l: 64%; }   /* 计算层 */
+.ic-cyan    { --ic-h: 189; --ic-s: 88%; --ic-l: 56%; }   /* 服务层 */
+.ic-pink    { --ic-h: 322; --ic-s: 82%; --ic-l: 66%; }   /* 展示层 */
 .bento-card h3 {
   font-family: "Noto Sans SC", var(--font-sans);
   font-size: 18px;
@@ -653,7 +676,7 @@ footer a:hover { color: var(--fg); }
 
     <div class="bento-card feature-big">
       <div>
-        <div class="icon-wrap"><i data-lucide="database"></i></div>
+        <div class="icon-wrap ic-amber"><i data-lucide="database"></i></div>
         <h3>HBase 驱动的元数据引擎</h3>
         <p>用户、文件、日志、统计四张表构成毫秒级检索底座，单集群可扩展至百亿行记录，RowKey 设计保证顺序扫描与热点均衡。</p>
       </div>
@@ -667,40 +690,40 @@ footer a:hover { color: var(--fg); }
 
     <div class="bento-card">
       <span class="tag">HDFS</span>
-      <div class="icon-wrap"><i data-lucide="hard-drive"></i></div>
+      <div class="icon-wrap ic-yellow"><i data-lucide="hard-drive"></i></div>
       <h3>海量文件稳如磐石</h3>
       <p>WebHDFS 直连，三副本容灾，按用户隔离目录。</p>
     </div>
 
     <div class="bento-card">
       <span class="tag">AI</span>
-      <div class="icon-wrap"><i data-lucide="sparkles"></i></div>
+      <div class="icon-wrap ic-violet"><i data-lucide="sparkles"></i></div>
       <h3>一键 AI 摘要</h3>
       <p>文档上传即读懂，自动生成摘要与标签。</p>
     </div>
 
     <div class="bento-card feature-wide">
-      <div class="icon-wrap"><i data-lucide="network"></i></div>
+      <div class="icon-wrap ic-teal"><i data-lucide="network"></i></div>
       <h3>文件关系图谱</h3>
       <p>力导向可视化呈现文件与标签的关联网络，让散落的资料回到一张图里。</p>
     </div>
 
     <div class="bento-card">
       <span class="tag">Spark</span>
-      <div class="icon-wrap"><i data-lucide="zap"></i></div>
+      <div class="icon-wrap ic-orange"><i data-lucide="zap"></i></div>
       <h3>批量分析</h3>
       <p>spark-submit 驱动统计与推荐离线计算。</p>
     </div>
 
     <div class="bento-card">
       <span class="tag">Dashboard</span>
-      <div class="icon-wrap"><i data-lucide="bar-chart-3"></i></div>
+      <div class="icon-wrap ic-green"><i data-lucide="bar-chart-3"></i></div>
       <h3>实时看板</h3>
       <p>ECharts 驱动的多维分析视图。</p>
     </div>
 
     <div class="bento-card span-2">
-      <div class="icon-wrap"><i data-lucide="shield-check"></i></div>
+      <div class="icon-wrap ic-emerald"><i data-lucide="shield-check"></i></div>
       <h3>企业级安全与审计</h3>
       <p>JWT 鉴权、角色分离、全链路操作日志写入 HBase，可追溯任意一次上传、下载与删除。回收站与配额双重保护，永不丢失。</p>
     </div>
@@ -716,22 +739,22 @@ footer a:hover { color: var(--fg); }
   </div>
   <div class="bento" style="grid-auto-rows: 150px;">
     <div class="bento-card">
-      <div class="icon-wrap"><i data-lucide="layers"></i></div>
+      <div class="icon-wrap ic-blue"><i data-lucide="layers"></i></div>
       <h3>存储层</h3>
       <p>HDFS + HBase + Thrift</p>
     </div>
     <div class="bento-card">
-      <div class="icon-wrap"><i data-lucide="cpu"></i></div>
+      <div class="icon-wrap ic-rose"><i data-lucide="cpu"></i></div>
       <h3>计算层</h3>
       <p>Spark 批处理 + Flume 流式采集</p>
     </div>
     <div class="bento-card">
-      <div class="icon-wrap"><i data-lucide="server"></i></div>
+      <div class="icon-wrap ic-cyan"><i data-lucide="server"></i></div>
       <h3>服务层</h3>
       <p>Flask REST API + JWT</p>
     </div>
     <div class="bento-card">
-      <div class="icon-wrap"><i data-lucide="monitor"></i></div>
+      <div class="icon-wrap ic-pink"><i data-lucide="monitor"></i></div>
       <h3>展示层</h3>
       <p>Vue 3 SPA + ECharts</p>
     </div>
