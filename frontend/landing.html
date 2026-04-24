@@ -418,17 +418,14 @@ section.block {
     0 10px 22px hsla(var(--ic-h), var(--ic-s), var(--ic-l), .32),
     inset 0 1px 0 hsla(var(--ic-h), var(--ic-s), 95%, .12);
 }
-.ic-amber   { --ic-h: 38;  --ic-s: 92%; --ic-l: 55%; }   /* HBase 元数据 */
-.ic-yellow  { --ic-h: 48;  --ic-s: 92%; --ic-l: 58%; }   /* HDFS 存储 */
-.ic-violet  { --ic-h: 265; --ic-s: 85%; --ic-l: 66%; }   /* AI */
-.ic-teal    { --ic-h: 172; --ic-s: 76%; --ic-l: 52%; }   /* 关系图谱 */
-.ic-orange  { --ic-h: 22;  --ic-s: 92%; --ic-l: 58%; }   /* Spark */
-.ic-green   { --ic-h: 152; --ic-s: 68%; --ic-l: 52%; }   /* Dashboard */
-.ic-emerald { --ic-h: 158; --ic-s: 72%; --ic-l: 48%; }   /* 安全审计 */
-.ic-blue    { --ic-h: 217; --ic-s: 91%; --ic-l: 62%; }   /* 存储层 */
-.ic-rose    { --ic-h: 350; --ic-s: 82%; --ic-l: 64%; }   /* 计算层 */
-.ic-cyan    { --ic-h: 189; --ic-s: 88%; --ic-l: 56%; }   /* 服务层 */
-.ic-pink    { --ic-h: 322; --ic-s: 82%; --ic-l: 66%; }   /* 展示层 */
+.ic-white   { --ic-h: 220; --ic-s: 14%; --ic-l: 90%; }   /* HBase 元数据 — 纯净银白 */
+.ic-blue    { --ic-h: 220; --ic-s: 95%; --ic-l: 64%; }   /* HDFS / 存储层 — 电光亮蓝 */
+.ic-pink    { --ic-h: 330; --ic-s: 90%; --ic-l: 68%; }   /* AI / 展示层 — 亮粉 */
+.ic-cyan    { --ic-h: 180; --ic-s: 90%; --ic-l: 56%; }   /* 关系图谱 / 服务层 — 青 */
+.ic-orange  { --ic-h: 22;  --ic-s: 95%; --ic-l: 60%; }   /* Spark — 橙 */
+.ic-lime    { --ic-h: 82;  --ic-s: 78%; --ic-l: 58%; }   /* Dashboard — 青柠 */
+.ic-violet  { --ic-h: 270; --ic-s: 90%; --ic-l: 72%; }   /* 安全审计 — 亮紫 */
+.ic-rose    { --ic-h: 350; --ic-s: 82%; --ic-l: 64%; }   /* 计算层 — 玫红 */
 .bento-card h3 {
   font-family: "Noto Sans SC", var(--font-sans);
   font-size: 18px;
@@ -676,7 +673,7 @@ footer a:hover { color: var(--fg); }
 
     <div class="bento-card feature-big">
       <div>
-        <div class="icon-wrap ic-amber"><i data-lucide="database"></i></div>
+        <div class="icon-wrap ic-white"><i data-lucide="database"></i></div>
         <h3>HBase 驱动的元数据引擎</h3>
         <p>用户、文件、日志、统计四张表构成毫秒级检索底座，单集群可扩展至百亿行记录，RowKey 设计保证顺序扫描与热点均衡。</p>
       </div>
@@ -690,20 +687,20 @@ footer a:hover { color: var(--fg); }
 
     <div class="bento-card">
       <span class="tag">HDFS</span>
-      <div class="icon-wrap ic-yellow"><i data-lucide="hard-drive"></i></div>
+      <div class="icon-wrap ic-blue"><i data-lucide="hard-drive"></i></div>
       <h3>海量文件稳如磐石</h3>
       <p>WebHDFS 直连，三副本容灾，按用户隔离目录。</p>
     </div>
 
     <div class="bento-card">
       <span class="tag">AI</span>
-      <div class="icon-wrap ic-violet"><i data-lucide="sparkles"></i></div>
+      <div class="icon-wrap ic-pink"><i data-lucide="sparkles"></i></div>
       <h3>一键 AI 摘要</h3>
       <p>文档上传即读懂，自动生成摘要与标签。</p>
     </div>
 
     <div class="bento-card feature-wide">
-      <div class="icon-wrap ic-teal"><i data-lucide="network"></i></div>
+      <div class="icon-wrap ic-cyan"><i data-lucide="network"></i></div>
       <h3>文件关系图谱</h3>
       <p>力导向可视化呈现文件与标签的关联网络，让散落的资料回到一张图里。</p>
     </div>
@@ -717,13 +714,13 @@ footer a:hover { color: var(--fg); }
 
     <div class="bento-card">
       <span class="tag">Dashboard</span>
-      <div class="icon-wrap ic-green"><i data-lucide="bar-chart-3"></i></div>
+      <div class="icon-wrap ic-lime"><i data-lucide="bar-chart-3"></i></div>
       <h3>实时看板</h3>
       <p>ECharts 驱动的多维分析视图。</p>
     </div>
 
     <div class="bento-card span-2">
-      <div class="icon-wrap ic-emerald"><i data-lucide="shield-check"></i></div>
+      <div class="icon-wrap ic-violet"><i data-lucide="shield-check"></i></div>
       <h3>企业级安全与审计</h3>
       <p>JWT 鉴权、角色分离、全链路操作日志写入 HBase，可追溯任意一次上传、下载与删除。回收站与配额双重保护，永不丢失。</p>
     </div>
