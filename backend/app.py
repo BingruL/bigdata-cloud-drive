@@ -95,6 +95,11 @@ def create_app():
     def app_entry():
         return send_from_directory(app.static_folder, "index.html")
 
+    @app.route("/docs")
+    @app.route("/docs/")
+    def docs_page():
+        return send_from_directory(app.static_folder, "docs.html")
+
     @app.route("/<path:path>")
     def serve_static(path):
         file_path = os.path.join(app.static_folder, path)

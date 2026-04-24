@@ -75,8 +75,19 @@ a { color: inherit; text-decoration: none; }
 }
 
 /* ====== Nav ====== */
+.nav-wrapper {
+  position: fixed; top: 0; left: 0; right: 0;
+  z-index: 100;
+  transition: transform .35s ease, background .3s ease, backdrop-filter .3s ease;
+}
+.nav-wrapper.nav-hidden { transform: translateY(-110%); }
+.nav-wrapper.scrolled {
+  background: rgba(5,5,16,.72);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-bottom: 1px solid var(--line-soft);
+}
 .nav {
-  position: relative; z-index: 10;
   display: flex; align-items: center; justify-content: space-between;
   max-width: 1200px; margin: 0 auto; padding: 20px 32px;
 }
@@ -491,28 +502,29 @@ footer a:hover { color: var(--fg); }
   <div class="floating-orb orb-3"></div>
 
   <!-- Nav -->
-  <nav class="nav">
-    <div class="brand">
-      <span class="brand-logo">CD</span>
-      <span>CloudDrive</span>
-    </div>
-    <div class="menu">
-      <a href="#top" class="active">开始</a>
-      <a href="#features">特点</a>
-      <a href="#architecture">架构</a>
-      <a href="#compare">对比</a>
-      <a href="#faq">文档</a>
-    </div>
-    <div class="nav-cta">
-      <button class="lang">中 / EN</button>
-      <button class="btn-nav-primary" onclick="goApp()">立即体验</button>
-    </div>
-  </nav>
+  <div class="nav-wrapper" id="navWrapper">
+    <nav class="nav">
+      <div class="brand">
+        <span class="brand-logo">CD</span>
+        <span>CloudDrive</span>
+      </div>
+      <div class="menu">
+        <a href="#top" class="active">开始</a>
+        <a href="#features">特点</a>
+        <a href="#architecture">架构</a>
+        <a href="#compare">对比</a>
+        <a href="/docs">文档</a>
+      </div>
+      <div class="nav-cta">
+        <button class="btn-nav-primary" onclick="goApp()">立即体验</button>
+      </div>
+    </nav>
+  </div>
 
   <!-- Hero -->
   <header class="hero" id="top">
     <div class="hero-content">
-      <span class="badge">✦ AI-Native · HBase · HDFS · Spark</span>
+      <span class="badge">✦ HBase · HDFS · Spark</span>
       <h1 class="hero-title">
         让每一份数据<br>
         都被真正读懂
@@ -527,16 +539,6 @@ footer a:hover { color: var(--fg); }
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
         </button>
         <a href="#features" class="btn-secondary">了解更多</a>
-      </div>
-      <div class="stats-row">
-        <div class="stat-item">
-          <span class="stat-num" id="num1">0</span>
-          <span class="stat-label">分布式节点</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-num" id="num2">0</span>
-          <span class="stat-label">文件已接入</span>
-        </div>
       </div>
     </div>
   </header>
@@ -802,28 +804,21 @@ footer a:hover { color: var(--fg); }
     document.addEventListener('visibilitychange', () => { running = !document.hidden; });
   })();
 
-  /* Animated stat counters */
+  /* Sticky nav: hide while scrolling, reveal when scroll stops */
   (function() {
-    const targets = [{ el: document.getElementById('num1'), to: 128, suffix: '+' },
-                     { el: document.getElementById('num2'), to: 10000, suffix: '+' }];
-    const io = new IntersectionObserver((entries) => {
-      entries.forEach(e => {
-        if (!e.isIntersecting) return;
-        targets.forEach(t => {
-          const start = performance.now(), dur = 1600;
-          function tick(now) {
-            const k = Math.min(1, (now - start) / dur);
-            const eased = 1 - Math.pow(1 - k, 3);
-            const v = Math.round(t.to * eased);
-            t.el.textContent = v.toLocaleString() + t.suffix;
-            if (k < 1) requestAnimationFrame(tick);
-          }
-          requestAnimationFrame(tick);
-        });
-        io.disconnect();
-      });
-    }, { threshold: .3 });
-    io.observe(document.querySelector('.stats-row'));
+    const nav = document.getElementById('navWrapper');
+    if (!nav) return;
+    let scrollTimer;
+    let lastY = window.scrollY;
+    function onScroll() {
+      const y = window.scrollY;
+      if (y > 10) nav.classList.add('scrolled'); else nav.classList.remove('scrolled');
+      if (Math.abs(y - lastY) > 4 && y > 80) nav.classList.add('nav-hidden');
+      lastY = y;
+      clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(() => nav.classList.remove('nav-hidden'), 220);
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
   })();
 </script>
 </body>

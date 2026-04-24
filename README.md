@@ -50,6 +50,7 @@ bigdata-cloud-drive/
 │       └── stats_service.py    # 统计计算服务
 ├── frontend/                   # 前端 Web 界面
 │   ├── landing.html            # 炫酷引导页（/）- canvas 粒子背景 + bento 特性 + 对比表
+│   ├── docs.html               # 用户使用文档（/docs）- 侧栏目录 + 分节说明
 │   ├── index.html              # SPA 主页面（/app）
 │   ├── css/style.css           # 样式
 │   └── js/app.js               # Vue 3 应用逻辑
@@ -145,6 +146,7 @@ python run.py --port 8080
 
 - `/` —— 产品引导页（hero + 特性 bento + 对比表），点击"开始使用"进入系统
 - `/app` —— 注册 / 登录页（SPA 主入口）
+- `/docs` —— 用户使用文档（快速开始、文件管理、AI、看板、推荐等完整说明）
 
 测试账号：
 
