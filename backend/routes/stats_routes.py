@@ -1,6 +1,7 @@
 """
 统计分析 & AI 推荐路由
 """
+import time
 from flask import Blueprint, request, jsonify, g, current_app
 from ..auth.jwt_handler import login_required, admin_required
 
@@ -121,6 +122,37 @@ def hourly_activity():
     """24小时活跃度"""
     stats = current_app.config["STATS_SERVICE"]
     return jsonify(stats.get_hourly_activity())
+
+
+@stats_bp.route("/realtime", methods=["GET"])
+@login_required
+def realtime_stats():
+    """实时面板数据：由 spark_jobs/streaming_stats.py 写入 HBase 的 realtime_* 行
+    未启用 Streaming 时各项均为 null，前端据此显示"等待中"。
+    """
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+    keys = ["realtime_action_counts", "realtime_active_users",
+            "realtime_hot_files", "realtime_event_stream"]
+    result = {}
+    latest_update = 0
+    for k in keys:
+        s = hbase.get_stats(config.HBASE_TABLE_STATS, k)
+        if s:
+            result[k] = s["value"]
+            try:
+                latest_update = max(latest_update, int(s["updated_at"]))
+            except (TypeError, ValueError):
+                pass
+        else:
+            result[k] = None
+    result["updated_at"] = latest_update or None
+    # 用更新时间和当前时间差判断 streaming 是否在线（30 秒内有更新视为在线）
+    if latest_update:
+        result["streaming_online"] = (int(time.time() * 1000) - latest_update) < 30000
+    else:
+        result["streaming_online"] = False
+    return jsonify(result)
 
 
 @stats_bp.route("/activity-heatmap", methods=["GET"])

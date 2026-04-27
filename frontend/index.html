@@ -449,6 +449,63 @@
         <div v-if="currentPage === 'dashboard'" class="page-dashboard">
           <div class="page-header"><h2>数据看板</h2></div>
 
+          <!-- 实时面板（Spark Structured Streaming）-->
+          <section class="realtime-panel">
+            <div class="realtime-header">
+              <h3>
+                <span class="rt-pulse" :class="{ on: realtimeData.streaming_online }"></span>
+                实时面板
+                <small v-if="realtimeData.streaming_online">Spark Streaming 在线 · 每 2 秒刷新</small>
+                <small v-else class="rt-offline">Spark Streaming 离线（需启动 spark-submit streaming_stats.py）</small>
+              </h3>
+            </div>
+
+            <div class="realtime-grid">
+              <div class="rt-card rt-counter">
+                <div class="rt-label">最近 60 秒 · 总动作</div>
+                <div class="rt-big">{{ realtimeTotalActions() }}</div>
+                <div class="rt-breakdown">
+                  <span v-for="(v,k) in realtimeData.action_counts" :key="k">
+                    <em>{{ k }}</em> {{ v }}
+                  </span>
+                  <span v-if="!realtimeTotalActions()" class="rt-empty">暂无事件</span>
+                </div>
+              </div>
+
+              <div class="rt-card rt-counter">
+                <div class="rt-label">最近 5 分钟 · 活跃用户</div>
+                <div class="rt-big">{{ realtimeData.active_users.count || 0 }}</div>
+                <div class="rt-breakdown">
+                  <span v-for="u in realtimeData.active_users.users" :key="u">{{ u }}</span>
+                  <span v-if="!realtimeData.active_users.count" class="rt-empty">暂无用户</span>
+                </div>
+              </div>
+
+              <div class="rt-card rt-hot">
+                <div class="rt-label">最近 60 秒 · 热门文件</div>
+                <ol v-if="realtimeData.hot_files.length" class="rt-hotlist">
+                  <li v-for="f in realtimeData.hot_files" :key="f.file_id">
+                    <code>{{ (f.file_id || '').slice(0, 10) }}…</code>
+                    <span class="rt-hot-count">×{{ f.count }}</span>
+                  </li>
+                </ol>
+                <div v-else class="rt-empty">暂无热门</div>
+              </div>
+
+              <div class="rt-card rt-stream">
+                <div class="rt-label">事件流（最新 30 条）</div>
+                <ul class="rt-events">
+                  <li v-for="(e,i) in realtimeData.event_stream" :key="i">
+                    <span class="rt-evt-action" :data-action="e.action">{{ e.action }}</span>
+                    <span class="rt-evt-user">{{ e.username }}</span>
+                    <span class="rt-evt-detail">{{ (e.detail || '').slice(0, 24) }}</span>
+                  </li>
+                  <li v-if="!realtimeData.event_stream.length" class="rt-empty">暂无事件，去文件页操作几下试试</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+
           <!-- 概览卡片 -->
           <div class="stat-cards">
             <div class="stat-card">

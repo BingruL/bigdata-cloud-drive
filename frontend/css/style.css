@@ -816,6 +816,125 @@ h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; color: var(--ink);
 
 
 /* =====================================================
+   REALTIME PANEL — Spark Streaming live tile
+   ===================================================== */
+.realtime-panel {
+  margin-bottom: 32px;
+  border: var(--hairline);
+  background: var(--paper-card);
+  box-shadow: 0 14px 30px -20px rgba(27,23,20,0.18);
+}
+.realtime-header { padding: 18px 28px 0; }
+.realtime-header h3 {
+  display: flex; align-items: center; gap: 12px;
+  font-size: 15px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; margin: 0;
+}
+.realtime-header h3 small {
+  font-size: 12px; font-weight: 400; color: var(--ink-mute);
+  text-transform: none; letter-spacing: 0.02em;
+}
+.realtime-header h3 small.rt-offline { color: #c47a3d; }
+.rt-pulse {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #cbb89a; flex-shrink: 0;
+}
+.rt-pulse.on {
+  background: #4ade80;
+  box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.6);
+  animation: rt-pulse 1.6s infinite;
+}
+@keyframes rt-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.6); }
+  70%  { box-shadow: 0 0 0 10px rgba(74, 222, 128, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+}
+.realtime-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  border-top: var(--hairline);
+  margin-top: 18px;
+}
+.rt-card {
+  padding: 22px 24px;
+  border-right: var(--hairline);
+  display: flex; flex-direction: column; gap: 10px;
+  min-height: 180px;
+}
+.rt-card:last-child { border-right: none; }
+.rt-label {
+  font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--ink-mute);
+}
+.rt-big {
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 44px; font-weight: 600; line-height: 1;
+  color: var(--ink);
+}
+.rt-breakdown {
+  display: flex; flex-wrap: wrap; gap: 6px 10px;
+  font-size: 12px; color: var(--ink-mute);
+}
+.rt-breakdown span { white-space: nowrap; }
+.rt-breakdown em {
+  font-style: normal; color: var(--ink); font-weight: 600;
+  margin-right: 3px;
+}
+.rt-empty { color: var(--ink-mute); font-size: 12px; opacity: 0.7; }
+.rt-hotlist {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 6px;
+  font-size: 13px;
+}
+.rt-hotlist li {
+  display: flex; justify-content: space-between; align-items: center;
+}
+.rt-hotlist code {
+  font-size: 11px; background: var(--paper-soft);
+  padding: 2px 6px; border-radius: 3px; color: var(--ink-mute);
+}
+.rt-hot-count { font-weight: 600; color: var(--ink); }
+.rt-stream { overflow: hidden; }
+.rt-events {
+  list-style: none; padding: 0; margin: 0;
+  font-size: 12px;
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 130px; overflow-y: auto;
+}
+.rt-events li {
+  display: flex; gap: 8px; align-items: center;
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--hairline-color, rgba(0,0,0,0.05));
+}
+.rt-events li:last-child { border-bottom: none; }
+.rt-evt-action {
+  font-size: 10px; padding: 1px 6px;
+  border-radius: 2px; font-weight: 600;
+  background: var(--paper-soft); color: var(--ink);
+  text-transform: uppercase; letter-spacing: 0.05em;
+  min-width: 56px; text-align: center;
+}
+.rt-evt-action[data-action="upload"]   { background: #e8f0ff; color: #2952d6; }
+.rt-evt-action[data-action="download"] { background: #fff1da; color: #b8651b; }
+.rt-evt-action[data-action="delete"]   { background: #fde7e2; color: #b03a25; }
+.rt-evt-action[data-action="login"]    { background: #e3f7e6; color: #28793c; }
+.rt-evt-action[data-action="share"]    { background: #f0e3fb; color: #6a35a8; }
+.rt-evt-user { font-weight: 600; color: var(--ink); }
+.rt-evt-detail { color: var(--ink-mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+@media (max-width: 1100px) {
+  .realtime-grid { grid-template-columns: repeat(2, 1fr); }
+  .rt-card:nth-child(2) { border-right: none; }
+  .rt-card:nth-child(1), .rt-card:nth-child(2) { border-bottom: var(--hairline); }
+}
+@media (max-width: 640px) {
+  .realtime-grid { grid-template-columns: 1fr; }
+  .rt-card { border-right: none; border-bottom: var(--hairline); }
+  .rt-card:last-child { border-bottom: none; }
+}
+
+/* =====================================================
    DASHBOARD — Statistical broadsheet
    ===================================================== */
 .stat-cards {

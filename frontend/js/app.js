@@ -40,6 +40,17 @@ const app = createApp({
     // ===== Dashboard State =====
     const dashboardData = reactive({});
 
+    // ===== Realtime（Spark Streaming 实时面板）=====
+    const realtimeData = reactive({
+      streaming_online: false,
+      action_counts: {},
+      active_users: { count: 0, users: [] },
+      hot_files: [],
+      event_stream: [],
+      updated_at: null,
+    });
+    let realtimeTimer = null;
+
     // ===== Recommend State =====
     const recTab = ref("hot");
     const recommendFiles = ref([]);
@@ -432,6 +443,33 @@ const app = createApp({
       } catch (e) {
         showToast("加载看板数据失败: " + e.message, "error");
       }
+    }
+
+    // ===== Realtime polling =====
+    async function loadRealtime() {
+      try {
+        const r = await api("/stats/realtime");
+        realtimeData.streaming_online = !!r.streaming_online;
+        realtimeData.action_counts = r.realtime_action_counts || {};
+        realtimeData.active_users = r.realtime_active_users || { count: 0, users: [] };
+        realtimeData.hot_files = r.realtime_hot_files || [];
+        realtimeData.event_stream = r.realtime_event_stream || [];
+        realtimeData.updated_at = r.updated_at || null;
+      } catch (_) { /* 静默：streaming 未启动属于正常情况 */ }
+    }
+
+    function startRealtimePolling() {
+      stopRealtimePolling();
+      loadRealtime();
+      realtimeTimer = setInterval(loadRealtime, 2000);
+    }
+
+    function stopRealtimePolling() {
+      if (realtimeTimer) { clearInterval(realtimeTimer); realtimeTimer = null; }
+    }
+
+    function realtimeTotalActions() {
+      return Object.values(realtimeData.action_counts || {}).reduce((a, b) => a + b, 0);
     }
 
     async function renderCharts() {
@@ -1002,15 +1040,16 @@ const app = createApp({
     }
 
     // ===== Page Watcher =====
-    watch(currentPage, (page) => {
+    watch(currentPage, (page, prev) => {
       clearSelection();
       nextTick(() => {
         if (typeof lucide !== "undefined") lucide.createIcons();
       });
+      if (prev === "dashboard" && page !== "dashboard") stopRealtimePolling();
       if (page === "files") loadFiles();
       if (page === "recent") loadRecent();
       if (page === "trash") loadTrash();
-      if (page === "dashboard") loadDashboard();
+      if (page === "dashboard") { loadDashboard(); startRealtimePolling(); }
       if (page === "recommend") loadRecommend();
       if (page === "logs") loadLogs();
       if (page === "groups") { loadGroups(); groupDetail.value = null; }
@@ -1035,6 +1074,7 @@ const app = createApp({
       previewModal, previewLoading,
       fileViewMode, graphData, graphLoading, selectedGraphFile, relatedFiles,
       dashboardData,
+      realtimeData, realtimeTotalActions,
       recTab, recommendFiles, recommendScope, recommendScopeLabel,
       myGroups, groupDetail, newGroupForm, newMemberName, sharedFiles, shareModal,
       loadGroups, doCreateGroup, openGroupDetail, doAddMember, doRemoveMember,
