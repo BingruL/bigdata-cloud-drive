@@ -403,6 +403,62 @@ def search_files():
     return jsonify(result)
 
 
+@file_bp.route("/by-tag/<tag>", methods=["GET"])
+@login_required
+def files_by_tag(tag):
+    """按标签查询文件 —— 走 MapReduce/Spark 预计算的倒排索引表 cloud_drive_tag_index
+
+    流程：
+      1. 直接 get(tag) 拿到 file_id 列表（O(1)，无需扫描 cloud_drive_files）
+      2. 对每个 file_id 取最新元数据 + 应用统一的 _can_access 权限过滤
+      3. 如索引表不存在或为空，返回空列表 + 提示，引导用户先跑 MR 作业
+    """
+    import json as _json
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+    index_table = "cloud_drive_tag_index"
+
+    try:
+        with hbase._get_connection() as conn:
+            existing = [t.decode() for t in conn.tables()]
+            if index_table not in existing:
+                return jsonify({
+                    "tag": tag, "files": [], "count": 0,
+                    "hint": "倒排索引表尚未生成，请先运行 mapreduce_jobs/tag_index/run.sh 或 spark_jobs/tag_index_spark.py",
+                })
+            row = conn.table(index_table).row(tag.encode())
+    except Exception as e:
+        return jsonify({"error": f"读取索引失败: {e}"}), 500
+
+    if not row:
+        return jsonify({"tag": tag, "files": [], "count": 0})
+
+    try:
+        payload = _json.loads(row.get(b"idx:files", b"{}").decode())
+    except _json.JSONDecodeError:
+        payload = {"files": []}
+
+    updated_at = row.get(b"idx:updated_at", b"").decode()
+    file_ids = [f["file_id"] for f in payload.get("files", []) if f.get("file_id")]
+
+    # 取最新元数据 + 权限过滤（索引可能滞后于实时元数据）
+    files = []
+    for fid in file_ids:
+        meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, fid)
+        if not meta or meta.get("deleted") == "1":
+            continue
+        if not _can_access(meta):
+            continue
+        files.append(meta)
+
+    return jsonify({
+        "tag": tag,
+        "count": len(files),
+        "files": files,
+        "index_updated_at": updated_at or None,
+    })
+
+
 @file_bp.route("/<file_id>/preview", methods=["GET"])
 @login_required
 def preview_file(file_id):
