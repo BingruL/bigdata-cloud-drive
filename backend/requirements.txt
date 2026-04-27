@@ -6,8 +6,14 @@ happybase==1.2.0
 hdfs==2.7.3
 requests==2.31.0
 
+# === Kafka（可选，未启用 KAFKA_ENABLED 时不用安装） ===
+kafka-python==2.0.2
+
 # === Spark 作业依赖 (需 PySpark) ===
 # pyspark==3.5.0  # 通常通过 Spark 安装自带，如需单独安装可取消注释
 
 # === 开发辅助 ===
 # python-dotenv==1.0.0
+
+# === 测试 ===
+pytest==8.3.0

@@ -99,10 +99,7 @@ def upload_file():
         hbase.save_file_meta(config.HBASE_TABLE_FILES, file_id, meta)
 
         # 记录日志
-        hbase.add_log(
-            config.HBASE_TABLE_LOGS, g.current_user,
-            "upload", file_id
-        )
+        current_app.config["EVENT_BUS"].log(g.current_user, "upload", file_id)
 
         # 如果是文本文件，异步生成 AI 摘要
         text_types = {"txt", "md", "csv", "json", "xml", "html", "py", "java", "js", "log"}
@@ -247,7 +244,7 @@ def restore_file(file_id):
         return jsonify({"error": "该文件未在回收站中"}), 400
 
     hbase.restore_file(config.HBASE_TABLE_FILES, file_id)
-    hbase.add_log(config.HBASE_TABLE_LOGS, g.current_user, "restore", file_id)
+    current_app.config["EVENT_BUS"].log(g.current_user, "restore", file_id)
     return jsonify({"message": "文件已恢复"})
 
 
@@ -296,10 +293,7 @@ def download_file(file_id):
         hbase.increment_downloads(config.HBASE_TABLE_FILES, file_id)
 
         # 记录日志
-        hbase.add_log(
-            config.HBASE_TABLE_LOGS, g.current_user,
-            "download", file_id
-        )
+        current_app.config["EVENT_BUS"].log(g.current_user, "download", file_id)
 
         return send_file(
             temp_path,
@@ -331,7 +325,7 @@ def delete_file(file_id):
 
     try:
         hbase.soft_delete_file(config.HBASE_TABLE_FILES, file_id)
-        hbase.add_log(config.HBASE_TABLE_LOGS, g.current_user, "delete", file_id)
+        current_app.config["EVENT_BUS"].log(g.current_user, "delete", file_id)
         return jsonify({"message": "文件已移至回收站"})
     except Exception as e:
         current_app.logger.error(f"文件软删除失败: {e}")
@@ -363,7 +357,7 @@ def purge_file(file_id):
             except Exception as e:
                 current_app.logger.warning(f"HDFS 文件删除失败（继续清理元数据）: {e}")
         hbase.delete_file_meta(config.HBASE_TABLE_FILES, file_id)
-        hbase.add_log(config.HBASE_TABLE_LOGS, g.current_user, "purge", file_id)
+        current_app.config["EVENT_BUS"].log(g.current_user, "purge", file_id)
         return jsonify({"message": "文件已彻底删除"})
     except Exception as e:
         current_app.logger.error(f"文件彻底删除失败: {e}")
@@ -551,7 +545,7 @@ def share_file(file_id):
         return jsonify({"error": err}), 403
 
     hbase.update_file_sharing(config.HBASE_TABLE_FILES, file_id, True, group_ids)
-    hbase.add_log(config.HBASE_TABLE_LOGS, g.current_user, "share", f"{file_id}:{','.join(group_ids)}")
+    current_app.config["EVENT_BUS"].log(g.current_user, "share", f"{file_id}:{','.join(group_ids)}")
     return jsonify({"message": "已分享", "groups": group_ids})
 
 
@@ -569,7 +563,7 @@ def unshare_file(file_id):
         return jsonify({"error": "仅文件所有者可取消分享"}), 403
 
     hbase.update_file_sharing(config.HBASE_TABLE_FILES, file_id, False, [])
-    hbase.add_log(config.HBASE_TABLE_LOGS, g.current_user, "unshare", file_id)
+    current_app.config["EVENT_BUS"].log(g.current_user, "unshare", file_id)
     return jsonify({"message": "已取消分享"})
 
 

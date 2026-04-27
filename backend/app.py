@@ -13,6 +13,7 @@ from .services.hbase_service import HBaseService
 from .services.hdfs_service import HDFSService
 from .services.ai_service import AIService
 from .services.stats_service import StatsService
+from .services.event_bus import EventBus
 from .routes.auth_routes import auth_bp
 from .routes.file_routes import file_bp
 from .routes.stats_routes import stats_bp, ai_bp
@@ -63,6 +64,10 @@ def create_app():
     # 统计
     stats_service = StatsService(hbase_service, config)
     app.config["STATS_SERVICE"] = stats_service
+
+    # 事件总线（Kafka 优先 / HBase 直写兜底）
+    event_bus = EventBus(config, hbase_service)
+    app.config["EVENT_BUS"] = event_bus
 
     # ========== 初始化 HBase 表 ==========
 

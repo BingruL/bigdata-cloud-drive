@@ -1,0 +1,46 @@
+# 单节点 Kafka（KRaft 模式，无需 ZooKeeper）
+# 仅用于本项目演示与开发；生产环境请使用集群部署。
+#
+# 启动:    docker compose -f docker-compose.kafka.yml up -d
+# 停止:    docker compose -f docker-compose.kafka.yml down
+# 查看日志: docker compose -f docker-compose.kafka.yml logs -f kafka
+#
+# 启用 Kafka 事件链路:
+#   export KAFKA_ENABLED=1
+#   export KAFKA_BOOTSTRAP=localhost:9092
+#   python run.py                                  # 启动后端（producer 端）
+#   python -m backend.workers.log_consumer         # 另起终端启动 consumer
+
+services:
+  kafka:
+    image: bitnami/kafka:3.7
+    container_name: cloud-drive-kafka
+    ports:
+      - "9092:9092"   # 对外（宿主机）通信端口
+      - "9093:9093"   # KRaft 控制器端口（容器内部）
+    environment:
+      # KRaft 单节点模式
+      KAFKA_CFG_NODE_ID: "1"
+      KAFKA_CFG_PROCESS_ROLES: "controller,broker"
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: "1@kafka:9093"
+      KAFKA_CFG_LISTENERS: "PLAINTEXT://:9092,CONTROLLER://:9093"
+      KAFKA_CFG_ADVERTISED_LISTENERS: "PLAINTEXT://localhost:9092"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: "CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT"
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: "PLAINTEXT"
+      # 自动建 topic + 单副本（演示项目够用）
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_CFG_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+    volumes:
+      - kafka_data:/bitnami/kafka
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  kafka_data:

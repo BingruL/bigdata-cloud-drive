@@ -35,8 +35,7 @@ def register():
         return jsonify({"error": "用户名已存在"}), 409
 
     # 记录日志
-    log_table = current_app.config["APP_CONFIG"].HBASE_TABLE_LOGS
-    hbase.add_log(log_table, username, "register", "新用户注册")
+    current_app.config["EVENT_BUS"].log(username, "register", "新用户注册")
 
     return jsonify({"message": "注册成功", "user": result}), 201
 
@@ -72,8 +71,7 @@ def login():
     token = jwt_handler.generate_token(username, user["role"])
 
     # 记录日志
-    log_table = current_app.config["APP_CONFIG"].HBASE_TABLE_LOGS
-    hbase.add_log(log_table, username, "login", "用户登录")
+    current_app.config["EVENT_BUS"].log(username, "login", "用户登录")
 
     return jsonify({
         "message": "登录成功",

@@ -41,7 +41,7 @@ def create_group():
 
     groups_t, members_t, ug_t = _tables(config)
     info = hbase.create_group(groups_t, members_t, ug_t, name, g.current_user, description)
-    hbase.add_log(config.HBASE_TABLE_LOGS, g.current_user, "group_create", info["group_id"])
+    current_app.config["EVENT_BUS"].log(g.current_user, "group_create", info["group_id"])
     return jsonify(info), 201
 
 
@@ -93,7 +93,7 @@ def delete_group(group_id):
         return jsonify({"error": "仅群主可解散群组"}), 403
 
     hbase.delete_group(groups_t, members_t, ug_t, group_id)
-    hbase.add_log(config.HBASE_TABLE_LOGS, g.current_user, "group_delete", group_id)
+    current_app.config["EVENT_BUS"].log(g.current_user, "group_delete", group_id)
     return jsonify({"message": "群组已解散"})
 
 
@@ -120,7 +120,7 @@ def add_member(group_id):
     if not hbase.add_group_member(groups_t, members_t, ug_t, group_id, username):
         return jsonify({"error": "该用户已是群组成员"}), 400
 
-    hbase.add_log(config.HBASE_TABLE_LOGS, g.current_user, "group_add_member", f"{group_id}:{username}")
+    current_app.config["EVENT_BUS"].log(g.current_user, "group_add_member", f"{group_id}:{username}")
     return jsonify({"message": "成员已添加"}), 201
 
 
@@ -147,5 +147,5 @@ def remove_member(group_id, username):
         return jsonify({"error": "该用户不是群组成员"}), 404
 
     action = "group_leave" if is_self else "group_remove_member"
-    hbase.add_log(config.HBASE_TABLE_LOGS, g.current_user, action, f"{group_id}:{username}")
+    current_app.config["EVENT_BUS"].log(g.current_user, action, f"{group_id}:{username}")
     return jsonify({"message": "已移除成员"})

@@ -45,6 +45,13 @@ class Config:
     SPARK_MASTER = os.environ.get("SPARK_MASTER", "local[*]")
     SPARK_APP_NAME = "CloudDriveAnalytics"
 
+    # Kafka（可选；未启用时所有事件直接同步写 HBase）
+    # 启用方式：export KAFKA_ENABLED=1 KAFKA_BOOTSTRAP=localhost:9092
+    KAFKA_ENABLED = os.environ.get("KAFKA_ENABLED", "0") == "1"
+    KAFKA_BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "localhost:9092")
+    KAFKA_TOPIC_EVENTS = os.environ.get("KAFKA_TOPIC_EVENTS", "cloud_drive_events")
+    KAFKA_CONSUMER_GROUP = os.environ.get("KAFKA_CONSUMER_GROUP", "cloud_drive_log_writer")
+
     # AI 服务（兼容 OpenAI 格式的 API）
     # 支持多种后端：DeepSeek、Ollama、OpenAI、通义千问等
     # 常用配置示例：
