@@ -42,3 +42,10 @@ Thumbs.db
 # Hadoop/HBase 数据（若在项目内）
 data/
 logs/
+
+# Tool artifacts
+.codex
+.claude/
+
+# Spark Structured Streaming checkpoint
+/tmp/cloud-drive-streaming-ckpt/
