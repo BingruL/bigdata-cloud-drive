@@ -29,6 +29,11 @@ class HBaseService:
         with self._pool.connection() as conn:
             yield conn
 
+    def ping(self):
+        """探活：拉一次表列表，失败抛异常。供 /api/health 调用。"""
+        with self._get_connection() as conn:
+            conn.tables()
+
     # ========== 表管理 ==========
 
     def init_tables(self, table_config):
@@ -323,6 +328,31 @@ class HBaseService:
                 "value": json.loads(value),
                 "updated_at": updated,
             }
+
+    def remove_group_from_all_files(self, table_name, group_id):
+        """从所有文件的 shared_groups 列表中摘除指定 group_id。
+
+        群组解散时调用。若摘除后列表为空，自动把 is_shared 置回 "0"。
+        返回受影响的文件数，便于审计。
+        """
+        affected = 0
+        with self._get_connection() as conn:
+            table = conn.table(table_name)
+            for key, data in table.scan():
+                shared_raw = data.get(b"meta:shared_groups", b"").decode()
+                if not shared_raw:
+                    continue
+                groups = [x for x in shared_raw.split(",") if x]
+                if group_id not in groups:
+                    continue
+                groups.remove(group_id)
+                new_str = ",".join(groups)
+                table.put(key, {
+                    b"meta:shared_groups": new_str.encode(),
+                    b"meta:is_shared": (b"1" if new_str else b"0"),
+                })
+                affected += 1
+        return affected
 
     def update_file_sharing(self, table_name, file_id, is_shared, group_ids):
         """更新文件的分享状态与目标群组列表

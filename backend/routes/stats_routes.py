@@ -17,17 +17,19 @@ def _stats_bad_arg(err):
 @stats_bp.route("/dashboard", methods=["GET"])
 @login_required
 def dashboard_summary():
-    """Dashboard 汇总数据"""
+    """Dashboard 汇总数据（普通用户只看自己视角，admin 看全站）"""
     stats = current_app.config["STATS_SERVICE"]
-    return jsonify(stats.get_dashboard_summary())
+    username = None if g.current_role == "admin" else g.current_user
+    return jsonify(stats.get_dashboard_summary(username))
 
 
 @stats_bp.route("/user-file-counts", methods=["GET"])
 @login_required
 def user_file_counts():
-    """各用户文件数量"""
+    """各用户文件数量（普通用户只看自己一行，admin 看全站排行）"""
     stats = current_app.config["STATS_SERVICE"]
-    return jsonify(stats.get_user_file_counts())
+    username = None if g.current_role == "admin" else g.current_user
+    return jsonify(stats.get_user_file_counts(username))
 
 
 @stats_bp.route("/file-type-distribution", methods=["GET"])
@@ -52,9 +54,10 @@ def daily_upload_trend():
 @stats_bp.route("/storage", methods=["GET"])
 @login_required
 def storage_stats():
-    """存储空间统计"""
+    """存储空间统计（普通用户只看自己，admin 看全站）"""
     stats = current_app.config["STATS_SERVICE"]
-    return jsonify(stats.get_storage_stats())
+    username = None if g.current_role == "admin" else g.current_user
+    return jsonify(stats.get_storage_stats(username))
 
 
 @stats_bp.route("/my-storage", methods=["GET"])
@@ -107,27 +110,30 @@ def my_storage():
 @stats_bp.route("/hot-files", methods=["GET"])
 @login_required
 def hot_files():
-    """热门文件排行"""
+    """热门文件排行（普通用户只看自己的文件，admin 看全站）"""
     stats = current_app.config["STATS_SERVICE"]
     top_n = parse_int_arg("top", default=10, min_value=1, max_value=100)
-    return jsonify(stats.get_hot_files(top_n))
+    username = None if g.current_role == "admin" else g.current_user
+    return jsonify(stats.get_hot_files(top_n, username))
 
 
 @stats_bp.route("/recent-activity", methods=["GET"])
 @login_required
 def recent_activity():
-    """最近操作动态"""
+    """最近操作动态（普通用户只看自己的操作，admin 看全站）"""
     stats = current_app.config["STATS_SERVICE"]
     limit = parse_int_arg("limit", default=20, min_value=1, max_value=200)
-    return jsonify(stats.get_recent_activity(limit))
+    username = None if g.current_role == "admin" else g.current_user
+    return jsonify(stats.get_recent_activity(limit, username))
 
 
 @stats_bp.route("/hourly-activity", methods=["GET"])
 @login_required
 def hourly_activity():
-    """24小时活跃度"""
+    """24小时活跃度（普通用户只看自己，admin 看全站）"""
     stats = current_app.config["STATS_SERVICE"]
-    return jsonify(stats.get_hourly_activity())
+    username = None if g.current_role == "admin" else g.current_user
+    return jsonify(stats.get_hourly_activity(username))
 
 
 @stats_bp.route("/realtime", methods=["GET"])

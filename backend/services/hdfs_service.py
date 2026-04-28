@@ -19,6 +19,10 @@ class HDFSService:
         self.root_dir = root_dir
         self.client = InsecureClient(self.url, user=self.user)
 
+    def ping(self):
+        """探活：对根目录 status，失败抛异常。供 /api/health 调用。"""
+        self.client.status("/", strict=False)
+
     def init_directories(self):
         """初始化 HDFS 目录结构"""
         dirs = [

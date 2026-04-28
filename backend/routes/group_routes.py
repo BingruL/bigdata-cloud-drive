@@ -93,8 +93,11 @@ def delete_group(group_id):
         return jsonify({"error": "仅群主可解散群组"}), 403
 
     hbase.delete_group(groups_t, members_t, ug_t, group_id)
-    current_app.config["EVENT_BUS"].log(g.current_user, "group_delete", group_id)
-    return jsonify({"message": "群组已解散"})
+    # 级联清理：把所有文件 shared_groups 列表里残留的 group_id 摘除
+    affected = hbase.remove_group_from_all_files(config.HBASE_TABLE_FILES, group_id)
+    current_app.config["EVENT_BUS"].log(g.current_user, "group_delete",
+                                        f"{group_id} (cleaned {affected} files)")
+    return jsonify({"message": "群组已解散", "files_unshared": affected})
 
 
 @group_bp.route("/<group_id>/members", methods=["POST"])

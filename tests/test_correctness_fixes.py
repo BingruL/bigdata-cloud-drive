@@ -163,3 +163,151 @@ def test_negative_days_returns_400(client, alice):
     _, _, h = alice
     rv = client.get("/api/stats/daily-upload-trend?days=-1", headers=h)
     assert rv.status_code == 400
+
+
+# ===== Fix 7 (本轮): 用户名白名单 =====
+
+def test_register_rejects_slash_in_username(client):
+    rv = client.post("/api/auth/register",
+                     json={"username": "alice/bob", "password": "123456"})
+    assert rv.status_code == 400
+
+
+def test_register_rejects_hash_in_username(client):
+    rv = client.post("/api/auth/register",
+                     json={"username": "alice#bob", "password": "123456"})
+    assert rv.status_code == 400
+
+
+def test_register_rejects_space_in_username(client):
+    rv = client.post("/api/auth/register",
+                     json={"username": "alice bob", "password": "123456"})
+    assert rv.status_code == 400
+
+
+def test_register_rejects_dotdot_username(client):
+    rv = client.post("/api/auth/register",
+                     json={"username": "..", "password": "123456"})
+    assert rv.status_code == 400
+
+
+def test_register_accepts_valid_username(client):
+    rv = client.post("/api/auth/register",
+                     json={"username": "user_1-2", "password": "123456"})
+    assert rv.status_code == 201
+
+
+# ===== Fix 8 (本轮): 看板按用户 scope =====
+
+def test_dashboard_scoped_to_self_for_normal_user(client, alice, bob):
+    _, _, ah = alice
+    _, _, bh = bob
+    _upload(client, ah, "a1.txt", b"x")
+    _upload(client, ah, "a2.txt", b"x")
+    _upload(client, bh, "b1.txt", b"x")
+
+    rv = client.get("/api/stats/dashboard", headers=ah).get_json()
+    assert rv["total_files"] == 2
+    assert rv["total_users"] == 1
+
+
+def test_dashboard_admin_sees_all(client, alice, bob, admin):
+    _, _, ah = alice
+    _, _, bh = bob
+    _, _, adh = admin
+    _upload(client, ah, "a.txt", b"x")
+    _upload(client, bh, "b.txt", b"x")
+
+    rv = client.get("/api/stats/dashboard", headers=adh).get_json()
+    assert rv["total_files"] == 2
+    assert rv["total_users"] == 2
+
+
+def test_hot_files_hides_others_for_normal_user(client, alice, bob):
+    _, _, ah = alice
+    _, _, bh = bob
+    rv = _upload(client, bh, "bobs-secret.txt", b"x")
+    bob_fid = rv.get_json()["file"]["file_id"]
+
+    items = client.get("/api/stats/hot-files", headers=ah).get_json()
+    assert all(f.get("file_id") != bob_fid for f in items)
+
+
+def test_recent_activity_hides_others_for_normal_user(client, alice, bob):
+    _, _, ah = alice
+    _, _, bh = bob
+    _upload(client, bh, "b.txt", b"x")  # bob 操作
+
+    items = client.get("/api/stats/recent-activity", headers=ah).get_json()
+    assert all(item["username"] == "alice" for item in items)
+
+
+def test_user_file_counts_hides_others_for_normal_user(client, alice, bob):
+    _, _, ah = alice
+    _, _, bh = bob
+    _upload(client, ah, "a.txt", b"x")
+    _upload(client, bh, "b.txt", b"x")
+
+    rows = client.get("/api/stats/user-file-counts", headers=ah).get_json()
+    assert len(rows) == 1
+    assert rows[0]["username"] == "alice"
+
+
+# ===== Fix 9 (本轮): 解散群组级联清理 shared_groups =====
+
+def test_delete_group_clears_shared_groups(client, alice, bob):
+    _, _, ah = alice
+    _, _, bh = bob
+
+    gid = _create_group(client, ah, "team")
+    client.post(f"/api/groups/{gid}/members",
+                headers=ah, json={"username": "bob"})
+
+    rv = _upload(client, ah, "doc.txt", b"x")
+    fid = rv.get_json()["file"]["file_id"]
+    client.post(f"/api/files/{fid}/share", headers=ah, json={"groups": [gid]})
+
+    # 解散前确认是 shared
+    info = client.get(f"/api/files/{fid}", headers=ah).get_json()
+    assert info["is_shared"] == "1"
+    assert gid in info["shared_groups"]
+
+    # 解散群组
+    rv = client.delete(f"/api/groups/{gid}", headers=ah)
+    assert rv.status_code == 200
+    assert rv.get_json()["files_unshared"] == 1
+
+    # 解散后文件应回落为私有
+    info = client.get(f"/api/files/{fid}", headers=ah).get_json()
+    assert info["is_shared"] == "0"
+    assert gid not in (info.get("shared_groups") or "")
+
+
+# ===== Fix 10 (本轮): /api/health 探测依赖 =====
+
+def test_health_reports_dependencies(client):
+    rv = client.get("/api/health")
+    payload = rv.get_json()
+    assert "dependencies" in payload
+    assert "hbase" in payload["dependencies"]
+    assert "hdfs" in payload["dependencies"]
+
+
+def test_health_returns_503_when_dependency_down(client, app):
+    # 模拟 HBase 故障：让 ping 抛异常
+    hbase = app.config["HBASE_SERVICE"]
+    original = hbase.ping
+
+    def _boom():
+        raise RuntimeError("thrift down")
+
+    hbase.ping = _boom
+    try:
+        rv = client.get("/api/health")
+        assert rv.status_code == 503
+        payload = rv.get_json()
+        assert payload["status"] == "degraded"
+        assert payload["dependencies"]["hbase"].startswith("down")
+        assert payload["dependencies"]["hdfs"] == "ok"
+    finally:
+        hbase.ping = original

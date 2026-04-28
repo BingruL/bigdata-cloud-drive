@@ -29,6 +29,9 @@ class FakeHBaseService:
         for name in table_config:
             self._t(name)
 
+    def ping(self):
+        return True
+
     # ===== 用户 =====
     def create_user(self, table_name, username, password_hash, role="user"):
         t = self._t(table_name)
@@ -148,6 +151,22 @@ class FakeHBaseService:
         row["is_shared"] = "1" if is_shared and shared_str else "0"
         row["shared_groups"] = shared_str
         return True
+
+    def remove_group_from_all_files(self, table_name, group_id):
+        affected = 0
+        for row in self._t(table_name).values():
+            shared_raw = row.get("shared_groups", "")
+            if not shared_raw:
+                continue
+            groups = [x for x in shared_raw.split(",") if x]
+            if group_id not in groups:
+                continue
+            groups.remove(group_id)
+            new_str = ",".join(groups)
+            row["shared_groups"] = new_str
+            row["is_shared"] = "1" if new_str else "0"
+            affected += 1
+        return affected
 
     def get_all_files_raw(self, table_name, include_deleted=True):
         result = []
@@ -296,6 +315,9 @@ class FakeHDFSService:
 
     def init_directories(self):
         pass
+
+    def ping(self):
+        return True
 
     def upload_file(self, username, file_id, local_path, filename):
         import os

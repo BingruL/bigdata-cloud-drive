@@ -117,10 +117,28 @@ def create_app():
             return send_from_directory(app.static_folder, path)
         return send_from_directory(app.static_folder, "index.html")
 
-    # 健康检查
+    # 健康检查（探测 HBase / HDFS 依赖；任一不可用返回 503）
     @app.route("/api/health")
     def health_check():
-        return {"status": "ok", "service": "BigData Cloud Drive"}
+        deps = {"hbase": "ok", "hdfs": "ok"}
+
+        try:
+            hbase_service.ping()
+        except Exception as e:
+            deps["hbase"] = f"down: {type(e).__name__}"
+
+        try:
+            hdfs_service.ping()
+        except Exception as e:
+            deps["hdfs"] = f"down: {type(e).__name__}"
+
+        healthy = all(v == "ok" for v in deps.values())
+        body = {
+            "status": "ok" if healthy else "degraded",
+            "service": "BigData Cloud Drive",
+            "dependencies": deps,
+        }
+        return (body, 200) if healthy else (body, 503)
 
     logger.info("智能云盘系统启动成功!")
     return app

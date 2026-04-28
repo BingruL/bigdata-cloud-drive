@@ -2,10 +2,16 @@
 认证路由
 注册、登录、Token 刷新、用户信息
 """
+import re
 from flask import Blueprint, request, jsonify, g, current_app
 from ..auth.jwt_handler import hash_password, verify_password, login_required
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
+
+# 用户名白名单：英文字母、数字、下划线、短横线，3-20 位
+# 用户名会进入 HDFS 路径段和 HBase 复合 RowKey（如 {gid}#{username}），
+# 因此禁止 / # 空格 .. 等会破坏路径或 split 解析的字符。
+USERNAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]{3,20}$")
 
 
 @auth_bp.route("/register", methods=["POST"])
@@ -20,8 +26,8 @@ def register():
 
     if not username or not password:
         return jsonify({"error": "用户名和密码不能为空"}), 400
-    if len(username) < 3 or len(username) > 20:
-        return jsonify({"error": "用户名长度 3-20 个字符"}), 400
+    if not USERNAME_PATTERN.match(username):
+        return jsonify({"error": "用户名只能包含字母、数字、下划线和短横线，长度 3-20"}), 400
     if len(password) < 6:
         return jsonify({"error": "密码至少 6 个字符"}), 400
 

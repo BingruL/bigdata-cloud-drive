@@ -27,12 +27,18 @@ class StatsService:
     def _get_all_logs(self):
         return self.hbase.get_logs(self.logs_table, limit=10000)
 
-    def get_user_file_counts(self):
-        """各用户上传文件数统计"""
+    def get_user_file_counts(self, username=None):
+        """各用户上传文件数统计
+
+        username=None 时（仅供 admin 调用）返回全站各 owner 的统计；
+        传入 username 时只返回该用户自己的一行，避免泄露其他用户名。
+        """
         files = self._get_all_files()
         counter = Counter()
         for f in files:
             owner = f.get("owner", "unknown")
+            if username and owner != username:
+                continue
             counter[owner] += 1
         return [{"username": k, "count": v} for k, v in counter.most_common()]
 
@@ -74,39 +80,50 @@ class StatsService:
         result = [{"date": k, "count": v} for k, v in sorted(daily.items())]
         return result
 
-    def get_storage_stats(self):
-        """存储空间统计"""
+    def get_storage_stats(self, username=None):
+        """存储空间统计。username 非 None 时只统计该用户的文件。"""
         files = self._get_all_files()
         total_size = 0
+        total_count = 0
         user_sizes = defaultdict(int)
 
         for f in files:
+            owner = f.get("owner", "unknown")
+            if username and owner != username:
+                continue
             size = int(f.get("size", 0))
             total_size += size
-            owner = f.get("owner", "unknown")
+            total_count += 1
             user_sizes[owner] += size
 
         return {
             "total_size": total_size,
             "total_size_readable": self._format_size(total_size),
-            "total_files": len(files),
+            "total_files": total_count,
             "user_storage": [
                 {"username": k, "size": v, "size_readable": self._format_size(v)}
                 for k, v in sorted(user_sizes.items(), key=lambda x: x[1], reverse=True)
             ],
         }
 
-    def get_hot_files(self, top_n=10):
-        """热门文件排行（按下载次数，排除回收站文件）"""
+    def get_hot_files(self, top_n=10, username=None):
+        """热门文件排行（按下载次数，排除回收站文件）
+
+        username 非 None 时只返回该用户拥有的文件，避免泄露其他用户的文件名/下载热度。
+        """
         files = [f for f in self._get_all_files() if f.get("deleted") != "1"]
+        if username:
+            files = [f for f in files if f.get("owner") == username]
         for f in files:
             f["downloads_int"] = int(f.get("downloads", 0))
         files.sort(key=lambda x: x["downloads_int"], reverse=True)
         return files[:top_n]
 
-    def get_recent_activity(self, limit=20):
-        """最近操作动态"""
+    def get_recent_activity(self, limit=20, username=None):
+        """最近操作动态。username 非 None 时只返回该用户自己的操作。"""
         logs = self._get_all_logs()
+        if username:
+            logs = [l for l in logs if l.get("username") == username]
         result = []
         for log in logs[:limit]:
             ts = log.get("timestamp", "0")
@@ -123,15 +140,19 @@ class StatsService:
             })
         return result
 
-    def get_dashboard_summary(self):
-        """Dashboard 汇总数据"""
+    def get_dashboard_summary(self, username=None):
+        """Dashboard 汇总数据。username 非 None 时只统计该用户视角。"""
         files = self._get_all_files()
         logs = self._get_all_logs()
+
+        if username:
+            files = [f for f in files if f.get("owner") == username]
+            logs = [l for l in logs if l.get("username") == username]
 
         total_files = len(files)
         total_size = sum(int(f.get("size", 0)) for f in files)
         total_downloads = sum(int(f.get("downloads", 0)) for f in files)
-        total_users = len(set(f.get("owner", "") for f in files))
+        total_users = 1 if username else len(set(f.get("owner", "") for f in files))
 
         return {
             "total_files": total_files,
@@ -142,14 +163,16 @@ class StatsService:
             "total_logs": len(logs),
         }
 
-    def get_hourly_activity(self):
-        """24 小时活跃度分布"""
+    def get_hourly_activity(self, username=None):
+        """24 小时活跃度分布。username 非 None 时只统计该用户的操作。"""
         logs = self._get_all_logs()
         hourly = defaultdict(int)
         for i in range(24):
             hourly[i] = 0
 
         for log in logs:
+            if username and log.get("username") != username:
+                continue
             ts = log.get("timestamp", "0")
             try:
                 dt = datetime.fromtimestamp(int(ts) / 1000)
