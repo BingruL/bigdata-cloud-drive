@@ -7,8 +7,14 @@ import uuid
 import time
 from flask import Blueprint, request, jsonify, g, current_app, send_file
 from ..auth.jwt_handler import login_required
+from ..utils import parse_int_arg, BadArg
 
 file_bp = Blueprint("files", __name__, url_prefix="/api/files")
+
+
+@file_bp.errorhandler(BadArg)
+def _handle_bad_arg(err):
+    return jsonify({"error": str(err)}), 400
 
 
 def _my_group_ids():
@@ -149,9 +155,11 @@ def list_files():
     owner = request.args.get("owner")
     file_type = request.args.get("type")
     keyword = request.args.get("keyword")
-    page = int(request.args.get("page", 1))
-    page_size = int(request.args.get("page_size", config.DEFAULT_PAGE_SIZE))
-    page_size = min(page_size, config.MAX_PAGE_SIZE)
+    page = parse_int_arg("page", default=1, min_value=1)
+    page_size = parse_int_arg(
+        "page_size", default=config.DEFAULT_PAGE_SIZE,
+        min_value=1, max_value=config.MAX_PAGE_SIZE,
+    )
 
     # 普通用户只能看自己的文件，管理员可以看所有
     if g.current_role != "admin":
@@ -174,7 +182,7 @@ def recent_files():
     config = current_app.config["APP_CONFIG"]
     hbase = current_app.config["HBASE_SERVICE"]
 
-    limit = int(request.args.get("limit", 30))
+    limit = parse_int_arg("limit", default=30, min_value=1, max_value=500)
     logs = hbase.get_logs(config.HBASE_TABLE_LOGS, username=g.current_user, limit=2000)
 
     # 聚合每个 file_id 的最近一次 download/preview 时间
@@ -216,8 +224,11 @@ def list_trash():
     config = current_app.config["APP_CONFIG"]
     hbase = current_app.config["HBASE_SERVICE"]
 
-    page = int(request.args.get("page", 1))
-    page_size = int(request.args.get("page_size", config.DEFAULT_PAGE_SIZE))
+    page = parse_int_arg("page", default=1, min_value=1)
+    page_size = parse_int_arg(
+        "page_size", default=config.DEFAULT_PAGE_SIZE,
+        min_value=1, max_value=config.MAX_PAGE_SIZE,
+    )
     owner = g.current_user if g.current_role != "admin" else None
 
     result = hbase.list_files(
@@ -256,7 +267,7 @@ def get_file_info(file_id):
     hbase = current_app.config["HBASE_SERVICE"]
 
     meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
-    if not meta:
+    if not meta or meta.get("deleted") == "1":
         return jsonify({"error": "文件不存在"}), 404
 
     if not _can_access(meta):
@@ -274,7 +285,7 @@ def download_file(file_id):
     hdfs = current_app.config["HDFS_SERVICE"]
 
     meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
-    if not meta:
+    if not meta or meta.get("deleted") == "1":
         return jsonify({"error": "文件不存在"}), 404
 
     if not _can_access(meta):
@@ -373,10 +384,14 @@ def search_files():
 
     keyword = request.args.get("keyword", "")
     file_type = request.args.get("type")
-    start_date = request.args.get("start_date")  # 时间戳（毫秒）
-    end_date = request.args.get("end_date")
-    page = int(request.args.get("page", 1))
-    page_size = int(request.args.get("page_size", 20))
+    start_date = parse_int_arg("start_date", default=None, min_value=0)
+    end_date = parse_int_arg("end_date", default=None, min_value=0)
+    page = parse_int_arg("page", default=1, min_value=1)
+    page_size = parse_int_arg(
+        "page_size", default=20, min_value=1, max_value=config.MAX_PAGE_SIZE,
+    )
+    if start_date is not None and end_date is not None and start_date > end_date:
+        raise BadArg("start_date 不能晚于 end_date")
 
     # 普通用户只能搜索自己的文件
     owner = None if g.current_role == "admin" else g.current_user
@@ -385,21 +400,8 @@ def search_files():
         config.HBASE_TABLE_FILES,
         owner=owner, file_type=file_type,
         keyword=keyword, page=page, page_size=page_size,
+        start_date=start_date, end_date=end_date,
     )
-
-    # 额外按时间范围过滤
-    if start_date or end_date:
-        filtered = []
-        for f in result["files"]:
-            ts = int(f.get("created_at", 0))
-            if start_date and ts < int(start_date):
-                continue
-            if end_date and ts > int(end_date):
-                continue
-            filtered.append(f)
-        result["files"] = filtered
-        result["total"] = len(filtered)
-
     return jsonify(result)
 
 
@@ -473,7 +475,7 @@ def preview_file(file_id):
     hdfs = current_app.config["HDFS_SERVICE"]
 
     meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
-    if not meta:
+    if not meta or meta.get("deleted") == "1":
         return jsonify({"error": "文件不存在"}), 404
 
     if not _can_access(meta):
@@ -488,6 +490,7 @@ def preview_file(file_id):
     try:
         if file_type in text_types:
             content = hdfs.read_text_file(hdfs_path, max_bytes=100000)
+            current_app.config["EVENT_BUS"].log(g.current_user, "preview", file_id)
             return jsonify({
                 "type": "text",
                 "filename": meta.get("filename", ""),
@@ -503,6 +506,7 @@ def preview_file(file_id):
                 "webp": "image/webp",
             }
             mime = mime_map.get(file_type, "image/png")
+            current_app.config["EVENT_BUS"].log(g.current_user, "preview", file_id)
             return jsonify({
                 "type": "image",
                 "filename": meta.get("filename", ""),
@@ -630,9 +634,11 @@ def list_shared_with_me():
     config = current_app.config["APP_CONFIG"]
     hbase = current_app.config["HBASE_SERVICE"]
 
-    page = int(request.args.get("page", 1))
-    page_size = int(request.args.get("page_size", config.DEFAULT_PAGE_SIZE))
-    page_size = min(page_size, config.MAX_PAGE_SIZE)
+    page = parse_int_arg("page", default=1, min_value=1)
+    page_size = parse_int_arg(
+        "page_size", default=config.DEFAULT_PAGE_SIZE,
+        min_value=1, max_value=config.MAX_PAGE_SIZE,
+    )
 
     my_gids = set(hbase.list_user_group_ids(config.HBASE_TABLE_USER_GROUPS, g.current_user))
     if not my_gids and g.current_role != "admin":
