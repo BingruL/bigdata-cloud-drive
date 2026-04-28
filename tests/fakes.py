@@ -67,7 +67,8 @@ class FakeHBaseService:
         return True
 
     def list_files(self, table_name, owner=None, file_type=None, keyword=None,
-                   page=1, page_size=20, include_deleted=False, only_deleted=False):
+                   page=1, page_size=20, include_deleted=False, only_deleted=False,
+                   start_date=None, end_date=None):
         files = []
         for fid, row in self._t(table_name).items():
             info = {"file_id": fid, **row}
@@ -83,6 +84,15 @@ class FakeHBaseService:
                 continue
             if keyword and keyword.lower() not in info.get("filename", "").lower():
                 continue
+            if start_date is not None or end_date is not None:
+                try:
+                    ts = int(info.get("created_at", 0) or 0)
+                except (TypeError, ValueError):
+                    ts = 0
+                if start_date is not None and ts < start_date:
+                    continue
+                if end_date is not None and ts > end_date:
+                    continue
             files.append(info)
         if only_deleted:
             files.sort(key=lambda x: x.get("deleted_at", "0"), reverse=True)
@@ -223,6 +233,8 @@ class FakeHBaseService:
 
     def add_group_member(self, groups_table, members_table, user_groups_table,
                          group_id, username, role="member"):
+        if group_id not in self._t(groups_table):
+            raise ValueError(f"group {group_id} 不存在")
         members = self._t(members_table)
         mkey = f"{group_id}#{username}"
         if mkey in members:
