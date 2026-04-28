@@ -4,8 +4,14 @@
 import time
 from flask import Blueprint, request, jsonify, g, current_app
 from ..auth.jwt_handler import login_required, admin_required
+from ..utils import parse_int_arg, BadArg
 
 stats_bp = Blueprint("stats", __name__, url_prefix="/api/stats")
+
+
+@stats_bp.errorhandler(BadArg)
+def _stats_bad_arg(err):
+    return jsonify({"error": str(err)}), 400
 
 
 @stats_bp.route("/dashboard", methods=["GET"])
@@ -38,7 +44,7 @@ def file_type_distribution():
 def daily_upload_trend():
     """每日上传趋势"""
     stats = current_app.config["STATS_SERVICE"]
-    days = int(request.args.get("days", 7))
+    days = parse_int_arg("days", default=7, min_value=1, max_value=365)
     username = None if g.current_role == "admin" else g.current_user
     return jsonify(stats.get_daily_upload_trend(days, username))
 
@@ -103,7 +109,7 @@ def my_storage():
 def hot_files():
     """热门文件排行"""
     stats = current_app.config["STATS_SERVICE"]
-    top_n = int(request.args.get("top", 10))
+    top_n = parse_int_arg("top", default=10, min_value=1, max_value=100)
     return jsonify(stats.get_hot_files(top_n))
 
 
@@ -112,7 +118,7 @@ def hot_files():
 def recent_activity():
     """最近操作动态"""
     stats = current_app.config["STATS_SERVICE"]
-    limit = int(request.args.get("limit", 20))
+    limit = parse_int_arg("limit", default=20, min_value=1, max_value=200)
     return jsonify(stats.get_recent_activity(limit))
 
 
@@ -160,7 +166,7 @@ def realtime_stats():
 def activity_heatmap():
     """用户活跃热力图数据（按日聚合操作次数）"""
     stats = current_app.config["STATS_SERVICE"]
-    days = int(request.args.get("days", 365))
+    days = parse_int_arg("days", default=365, min_value=1, max_value=365)
     username = None if g.current_role == "admin" else g.current_user
     return jsonify(stats.get_activity_heatmap(days, username))
 
@@ -168,6 +174,11 @@ def activity_heatmap():
 # ========== AI 推荐路由 ==========
 
 ai_bp = Blueprint("ai", __name__, url_prefix="/api/ai")
+
+
+@ai_bp.errorhandler(BadArg)
+def _ai_bad_arg(err):
+    return jsonify({"error": str(err)}), 400
 
 
 def _group_scoped_corpus(hbase, config):
@@ -193,6 +204,8 @@ def _group_scoped_corpus(hbase, config):
 
     candidates = []
     for f in all_files:
+        if f.get("owner") == g.current_user:
+            continue
         if f.get("is_shared") != "1":
             continue
         shared = {x for x in (f.get("shared_groups") or "").split(",") if x}
@@ -216,7 +229,7 @@ def recommend_hot():
     if not ai:
         return jsonify({"error": "AI 服务未配置"}), 503
 
-    top_n = int(request.args.get("top", 10))
+    top_n = parse_int_arg("top", default=10, min_value=1, max_value=100)
     files, _logs, meta = _group_scoped_corpus(hbase, config)
     return jsonify({"scope": meta["scope"], "items": ai.get_hot_files(files, top_n)})
 
@@ -231,7 +244,7 @@ def recommend_personalized():
     if not ai:
         return jsonify({"error": "AI 服务未配置"}), 503
 
-    top_n = int(request.args.get("top", 10))
+    top_n = parse_int_arg("top", default=10, min_value=1, max_value=100)
     files, logs, meta = _group_scoped_corpus(hbase, config)
     return jsonify({
         "scope": meta["scope"],
@@ -249,7 +262,7 @@ def recommend_similar_users():
     if not ai:
         return jsonify({"error": "AI 服务未配置"}), 503
 
-    top_n = int(request.args.get("top", 10))
+    top_n = parse_int_arg("top", default=10, min_value=1, max_value=100)
     files, logs, meta = _group_scoped_corpus(hbase, config)
     return jsonify({
         "scope": meta["scope"],
@@ -295,6 +308,6 @@ def related_files(file_id):
     if g.current_role != "admin":
         all_files = [f for f in all_files if f.get("owner") == g.current_user]
 
-    top_n = int(request.args.get("top", 10))
+    top_n = parse_int_arg("top", default=10, min_value=1, max_value=100)
     result = ai.get_related_files(all_files, file_id, top_n)
     return jsonify(result)

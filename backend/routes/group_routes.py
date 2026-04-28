@@ -110,6 +110,9 @@ def add_member(group_id):
     if not username:
         return jsonify({"error": "用户名不能为空"}), 400
 
+    if not hbase.get_group(groups_t, group_id):
+        return jsonify({"error": "群组不存在"}), 404
+
     if not _is_owner(hbase, groups_t, group_id, g.current_user, g.current_role):
         return jsonify({"error": "仅群主可添加成员"}), 403
 

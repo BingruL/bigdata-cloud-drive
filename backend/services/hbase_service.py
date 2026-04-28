@@ -143,7 +143,8 @@ class HBaseService:
 
     def list_files(self, table_name, owner=None, file_type=None,
                    keyword=None, page=1, page_size=20,
-                   include_deleted=False, only_deleted=False):
+                   include_deleted=False, only_deleted=False,
+                   start_date=None, end_date=None):
         """
         列出文件（支持筛选）
         owner: 按所属用户筛选
@@ -151,6 +152,7 @@ class HBaseService:
         keyword: 按文件名关键字搜索
         include_deleted: 是否包含已软删除的文件（默认 False）
         only_deleted: 只返回软删除的文件（回收站视图）
+        start_date / end_date: created_at 时间窗口（毫秒），在分页前过滤
         """
         files = []
         with self._get_connection() as conn:
@@ -175,6 +177,15 @@ class HBaseService:
                     continue
                 if keyword and keyword.lower() not in file_info.get("filename", "").lower():
                     continue
+                if start_date is not None or end_date is not None:
+                    try:
+                        ts = int(file_info.get("created_at", 0) or 0)
+                    except (TypeError, ValueError):
+                        ts = 0
+                    if start_date is not None and ts < start_date:
+                        continue
+                    if end_date is not None and ts > end_date:
+                        continue
 
                 files.append(file_info)
 
@@ -406,6 +417,9 @@ class HBaseService:
             members = conn.table(members_table)
             user_groups = conn.table(user_groups_table)
             groups = conn.table(groups_table)
+
+            if not groups.row(group_id.encode()):
+                raise ValueError(f"group {group_id} 不存在")
 
             mkey = f"{group_id}#{username}".encode()
             if members.row(mkey):

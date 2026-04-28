@@ -82,6 +82,10 @@ def move_to_cold(hbase, hdfs, config, cold_files, apply):
               f"{old_path} -> {new_path}")
         if apply:
             try:
+                # 确保目标父目录存在，否则 WebHDFS rename 会失败
+                parent = new_path.rsplit("/", 1)[0]
+                if parent:
+                    hdfs.client.makedirs(parent)
                 # WebHDFS 没有 rename API 直接暴露，分两步：read+write+delete
                 # 简化为：用 hdfs.client.rename
                 hdfs.client.rename(old_path, new_path)
