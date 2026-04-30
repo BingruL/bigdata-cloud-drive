@@ -1050,6 +1050,16 @@ const app = createApp({
       return "";
     }
 
+    // 列表内容变化后重新渲染 lucide 图标（否则 <i data-lucide="..."> 留空）
+    watch(
+      [files, recentFiles, sharedFiles, trashFiles, logs, myGroups, recommendFiles, relatedFiles],
+      () => {
+        nextTick(() => {
+          if (typeof lucide !== "undefined") lucide.createIcons();
+        });
+      }
+    );
+
     // ===== Page Watcher =====
     watch(currentPage, (page, prev) => {
       clearSelection();
