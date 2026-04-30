@@ -4,8 +4,9 @@
 """
 import os
 import logging
-from flask import Flask, send_from_directory
+from flask import Flask, send_from_directory, jsonify, request
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 
 from .config import get_config
 from .auth.jwt_handler import JWTHandler
@@ -139,6 +140,16 @@ def create_app():
             "dependencies": deps,
         }
         return (body, 200) if healthy else (body, 503)
+
+    # /api/* 错误统一返回 JSON，避免前端 resp.json() 解析到 Flask 默认的 HTML 错误页
+    @app.errorhandler(Exception)
+    def handle_api_error(e):
+        if not request.path.startswith("/api/"):
+            raise e
+        if isinstance(e, HTTPException):
+            return jsonify({"error": e.description}), e.code
+        logger.exception(f"未捕获异常 on {request.path}: {e}")
+        return jsonify({"error": "服务器内部错误，请稍后重试"}), 500
 
     logger.info("智能云盘系统启动成功!")
     return app

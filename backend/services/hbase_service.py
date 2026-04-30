@@ -3,6 +3,7 @@ HBase 服务层
 负责与 HBase 交互，管理用户、文件元数据、操作日志等
 使用 happybase 库连接 HBase Thrift Server
 """
+import functools
 import happybase
 import json
 import time
@@ -10,9 +11,34 @@ import uuid
 import logging
 from contextlib import contextmanager
 
+from thriftpy2.transport import TTransportException
+
 logger = logging.getLogger(__name__)
 
 
+def _retry_on_stale(fn):
+    """连接池里的 Thrift 连接被对端关掉时，第一次请求会拿到一条 stale 连接并抛
+    TTransportException("TSocket read 0 bytes")。happybase 会替换该连接，但当前
+    调用本身不会自动重试。这里捕获一次并重发，避免把错误暴露给上层。"""
+    @functools.wraps(fn)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return fn(self, *args, **kwargs)
+        except TTransportException as e:
+            logger.warning(f"HBase Thrift 连接失活，自动重试一次: {e}")
+            return fn(self, *args, **kwargs)
+    return wrapper
+
+
+def _wrap_public_methods_with_retry(cls):
+    for name, attr in list(vars(cls).items()):
+        if name.startswith("_") or not callable(attr):
+            continue
+        setattr(cls, name, _retry_on_stale(attr))
+    return cls
+
+
+@_wrap_public_methods_with_retry
 class HBaseService:
     """HBase 数据访问服务"""
 
