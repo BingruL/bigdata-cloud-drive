@@ -83,6 +83,58 @@ class AIService:
             logger.error(f"AI 返回结果解析失败: {e}")
             return {"summary": "AI 返回格式异常", "tags": []}
 
+    def generate_tags_from_filename(self, filename):
+        """
+        仅根据文件名推断分类标签（用于无法读取纯文本的二进制文件，
+        如 docx / pptx / pdf / xlsx / 图片 / 压缩包等）
+        """
+        if not filename:
+            return {"summary": "", "tags": []}
+
+        prompt = f"""请仅根据以下文件名推断 3-5 个分类标签（如：技术、财务、合同、报告、笔记、论文、课件、图片等）。
+不要编造内容摘要，只输出标签。
+
+文件名：{filename}
+
+请严格按以下 JSON 格式返回（不要包含其他内容）：
+{{"tags": ["标签1", "标签2", "标签3"]}}"""
+
+        try:
+            headers = {"Content-Type": "application/json"}
+            if self.api_key:
+                headers["Authorization"] = f"Bearer {self.api_key}"
+
+            resp = requests.post(
+                f"{self.api_url}/chat/completions",
+                headers=headers,
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                    "max_tokens": 200,
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            answer = data["choices"][0]["message"]["content"].strip()
+
+            if answer.startswith("```"):
+                lines = answer.split("\n")
+                answer = "\n".join(lines[1:-1])
+            result = json.loads(answer)
+            return {
+                "summary": "",
+                "tags": result.get("tags", []),
+            }
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"AI API 请求失败: {e}")
+            return {"summary": "", "tags": []}
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.error(f"AI 返回结果解析失败: {e}")
+            return {"summary": "", "tags": []}
+
     # ========== 智能推荐 ==========
 
     def get_hot_files(self, all_files, top_n=10):

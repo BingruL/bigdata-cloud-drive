@@ -11,6 +11,9 @@ from ..utils import parse_int_arg, BadArg
 
 file_bp = Blueprint("files", __name__, url_prefix="/api/files")
 
+# 可直接按文本读取并送入 LLM 做内容摘要的扩展名；其他类型一律走"仅文件名→标签"分支
+TEXT_EXTRACTABLE_TYPES = {"txt", "md", "csv", "json", "xml", "html", "py", "java", "js", "log"}
+
 
 @file_bp.errorhandler(BadArg)
 def _handle_bad_arg(err):
@@ -107,21 +110,22 @@ def upload_file():
         # 记录日志
         current_app.config["EVENT_BUS"].log(g.current_user, "upload", file_id)
 
-        # 如果是文本文件，异步生成 AI 摘要
-        text_types = {"txt", "md", "csv", "json", "xml", "html", "py", "java", "js", "log"}
-        if file_ext in text_types:
-            try:
-                ai = current_app.config.get("AI_SERVICE")
-                if ai:
+        # 文本文件：读内容生成摘要+标签；其他类型：仅根据文件名生成标签
+        try:
+            ai = current_app.config.get("AI_SERVICE")
+            if ai:
+                if file_ext in TEXT_EXTRACTABLE_TYPES:
                     content = hdfs.read_text_file(hdfs_path, max_bytes=30000)
                     result = ai.generate_summary(content, file.filename)
-                    hbase.update_file_ai(
-                        config.HBASE_TABLE_FILES, file_id,
-                        summary=result.get("summary", ""),
-                        tags=",".join(result.get("tags", [])),
-                    )
-            except Exception as e:
-                current_app.logger.warning(f"AI 摘要生成失败: {e}")
+                else:
+                    result = ai.generate_tags_from_filename(file.filename)
+                hbase.update_file_ai(
+                    config.HBASE_TABLE_FILES, file_id,
+                    summary=result.get("summary", ""),
+                    tags=",".join(result.get("tags", [])),
+                )
+        except Exception as e:
+            current_app.logger.warning(f"AI 标签/摘要生成失败: {e}")
 
         return jsonify({
             "message": "上传成功",
@@ -543,28 +547,29 @@ def generate_file_summary(file_id):
         return jsonify({"error": "无权操作此文件"}), 403
 
     hdfs_path = meta.get("hdfs_path")
-    text_types = {"txt", "md", "csv", "json", "xml", "html", "py", "java", "js", "log"}
-
-    if meta.get("type", "").lower() not in text_types:
-        return jsonify({"error": "仅支持文本类型文件生成摘要"}), 400
+    file_ext = meta.get("type", "").lower()
+    filename = meta.get("filename", "")
 
     try:
-        content = hdfs.read_text_file(hdfs_path, max_bytes=30000)
-        result = ai.generate_summary(content, meta.get("filename", ""))
+        if file_ext in TEXT_EXTRACTABLE_TYPES:
+            content = hdfs.read_text_file(hdfs_path, max_bytes=30000)
+            result = ai.generate_summary(content, filename)
+        else:
+            result = ai.generate_tags_from_filename(filename)
 
         summary = result.get("summary", "")
         tags = ",".join(result.get("tags", []))
         hbase.update_file_ai(config.HBASE_TABLE_FILES, file_id, summary=summary, tags=tags)
 
         return jsonify({
-            "message": "摘要生成成功",
+            "message": "AI 分析完成",
             "summary": summary,
             "tags": tags.split(",") if tags else [],
         })
 
     except Exception as e:
-        current_app.logger.error(f"AI 摘要生成失败: {e}")
-        return jsonify({"error": f"摘要生成失败: {str(e)}"}), 500
+        current_app.logger.error(f"AI 分析失败: {e}")
+        return jsonify({"error": f"AI 分析失败: {str(e)}"}), 500
 
 
 # ========== 群组分享 ==========
