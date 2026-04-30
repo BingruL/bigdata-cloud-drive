@@ -263,7 +263,7 @@ h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; color: var(--ink);
 }
 .btn-sm:hover { border-color: var(--ink); color: var(--ink); background: var(--paper-soft); }
 .btn-sm.btn-danger:hover { border-color: var(--red); color: var(--red); background: rgba(168,50,31,0.06); }
-.btn-sm i { width: 14px; height: 14px; }
+.btn-sm i, .btn-sm svg { width: 14px; height: 14px; }
 
 
 /* =====================================================

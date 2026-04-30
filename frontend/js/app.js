@@ -5,7 +5,7 @@
 
 const API_BASE = window.location.origin + "/api";
 
-const { createApp, ref, reactive, computed, onMounted, watch, nextTick } = Vue;
+const { createApp, ref, reactive, computed, onMounted, onUpdated, watch, nextTick } = Vue;
 
 const app = createApp({
   setup() {
@@ -1050,15 +1050,10 @@ const app = createApp({
       return "";
     }
 
-    // 列表内容变化后重新渲染 lucide 图标（否则 <i data-lucide="..."> 留空）
-    watch(
-      [files, recentFiles, sharedFiles, trashFiles, logs, myGroups, recommendFiles, relatedFiles],
-      () => {
-        nextTick(() => {
-          if (typeof lucide !== "undefined") lucide.createIcons();
-        });
-      }
-    );
+    // 任何一次 DOM 更新后重新处理 lucide 图标（v-for 列表刷新会插入新的 <i data-lucide="...">）
+    onUpdated(() => {
+      if (typeof lucide !== "undefined") lucide.createIcons();
+    });
 
     // ===== Page Watcher =====
     watch(currentPage, (page, prev) => {
