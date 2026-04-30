@@ -5,6 +5,7 @@ HDFS 服务层
 """
 import os
 import logging
+import requests
 from hdfs import InsecureClient
 
 logger = logging.getLogger(__name__)
@@ -17,7 +18,13 @@ class HDFSService:
         self.url = url
         self.user = user
         self.root_dir = root_dir
-        self.client = InsecureClient(self.url, user=self.user)
+        # WSL 等场景下用户的 http_proxy 环境变量会让 requests 把
+        # NameNode 重定向到的 DataNode (localhost:9864) 也走代理，导致
+        # 二进制写入返回空错误体 HdfsError: b''。这里关掉 trust_env，让
+        # 本服务的 HTTP 请求始终直连，不受外部代理变量影响。
+        session = requests.Session()
+        session.trust_env = False
+        self.client = InsecureClient(self.url, user=self.user, session=session)
 
     def ping(self):
         """探活：对根目录 status，失败抛异常。供 /api/health 调用。"""
