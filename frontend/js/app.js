@@ -228,7 +228,7 @@ const app = createApp({
       }
     }
 
-    async function doDownload(f) {
+    async function doDownload(f, opts = {}) {
       try {
         const resp = await fetch(API_BASE + `/files/${f.file_id}/download`, {
           headers: { Authorization: "Bearer " + token.value },
@@ -239,13 +239,18 @@ const app = createApp({
         const a = document.createElement("a");
         a.href = url;
         a.download = f.filename;
+        document.body.appendChild(a);
         a.click();
-        URL.revokeObjectURL(url);
-        showToast("下载成功", "success");
-        // 刷新列表更新下载次数
-        setTimeout(() => loadFiles(filePagination.page), 500);
+        a.remove();
+        // 推迟回收 blob URL，避免在浏览器写盘前提前释放
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        if (!opts.silent) {
+          showToast("已开始下载", "success");
+          setTimeout(() => loadFiles(filePagination.page), 500);
+        }
       } catch (e) {
-        showToast("下载失败: " + e.message, "error");
+        if (!opts.silent) showToast("下载失败: " + e.message, "error");
+        throw e;
       }
     }
 
@@ -895,11 +900,17 @@ const app = createApp({
     async function doBatchDownload() {
       const ids = [...selectedIds.value];
       if (!ids.length) return;
+      let ok = 0, fail = 0;
       for (const id of ids) {
         const f = files.value.find(x => x.file_id === id);
-        if (f) await doDownload(f);
+        if (!f) continue;
+        try { await doDownload(f, { silent: true }); ok++; }
+        catch { fail++; }
       }
+      const word = ids.length > 1 ? `${ok} 个文件已开始下载` : "已开始下载";
+      showToast(word + (fail ? `（失败 ${fail}）` : ""), fail ? "error" : "success");
       clearSelection();
+      setTimeout(() => loadFiles(filePagination.page), 500);
     }
 
     async function doBatchRestore() {
