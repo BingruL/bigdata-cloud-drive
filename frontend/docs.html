@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Kotta+One&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/lucide@0.263.1/dist/umd/lucide.min.js"></script>
+<script src="/js/vendor/lucide.min.js?v=20260501"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -374,12 +374,13 @@ footer a:hover { color: var(--fg); }
     <a href="#batch">4. 批量操作与排序</a>
     <a href="#ai">5. AI 摘要与标签</a>
     <a href="#graph">6. 文件关系图谱</a>
-    <a href="#recent">7. 最近访问</a>
-    <a href="#recycle">8. 回收站与配额</a>
-    <a href="#dashboard">9. 数据看板</a>
-    <a href="#recommend">10. 智能推荐</a>
-    <a href="#admin">11. 管理员后台</a>
-    <a href="#faq">12. 常见问题</a>
+    <a href="#groups">7. 群组与共享</a>
+    <a href="#recent">8. 最近访问</a>
+    <a href="#recycle">9. 回收站与配额</a>
+    <a href="#dashboard">10. 数据看板</a>
+    <a href="#recommend">11. 群组智能推荐</a>
+    <a href="#admin">12. 管理员后台</a>
+    <a href="#faq">13. 常见问题</a>
   </aside>
 
   <main class="content">
@@ -457,6 +458,8 @@ footer a:hover { color: var(--fg); }
       </ul>
       <h3>搜索与筛选</h3>
       <p>顶部搜索框支持按文件名模糊匹配，筛选下拉可按类型（文档、图片、视频等）过滤，结果实时更新。</p>
+      <h3>私有 / 共享标识</h3>
+      <p>每行文件名旁会显示一枚状态徽标：<strong>私有</strong> 表示仅你本人可见；<strong>共享</strong> 表示已分享到一个或多个群组，组内成员可下载与预览。文件默认创建为私有，需要手动通过「分享到群组」操作改变可见范围，详见 <a href="#groups">第 7 节 群组与共享</a>。</p>
     </section>
 
     <section class="doc-section" id="batch">
@@ -465,7 +468,7 @@ footer a:hover { color: var(--fg); }
       <h3>批量操作</h3>
       <ul>
         <li>勾选文件前的复选框，或通过表头复选框一次性选择当前页所有文件；</li>
-        <li>选中后顶部会出现批量工具条，可批量<strong>下载</strong>、<strong>删除</strong>或<strong>打标签</strong>；</li>
+        <li>选中后顶部会出现批量工具条，可批量<strong>下载</strong>或<strong>删除</strong>；回收站页面下还提供批量<strong>恢复</strong>与批量<strong>彻底删除</strong>；</li>
         <li>批量删除的文件会先进入回收站，30 天内可恢复。</li>
       </ul>
       <h3>列排序</h3>
@@ -496,8 +499,38 @@ footer a:hover { color: var(--fg); }
       </ul>
     </section>
 
+    <section class="doc-section" id="groups">
+      <h2><span class="num">07</span>群组与共享</h2>
+      <p class="lead">群组是本系统中分享文件的基本单位。所有共享行为都在群组语境下发生：你只能把自己的文件分享给你已加入的群组，组内任何成员都能在「群组共享」页面看到这些文件。</p>
+
+      <h3>我的群组</h3>
+      <ul>
+        <li>侧栏点击「我的群组」打开群组管理页，列表展示你已加入或创建的所有群组；</li>
+        <li>点击「创建群组」填写名称与描述即可建立新群组，创建者自动成为 <strong>owner</strong>；</li>
+        <li>点击任意群组卡片进入详情页，可查看成员列表、加入时间与角色；</li>
+        <li><strong>owner</strong> 与 <strong>admin</strong> 可在详情页通过用户名添加成员，或将非 owner 成员移出群组；</li>
+        <li>普通成员可随时点击「退出群组」离开；owner 可点击「解散群组」删除整个群组（此操作会清理所有成员关系，已分享到该群组的文件将失去对组员的访问权）。</li>
+      </ul>
+
+      <h3>把文件分享到群组</h3>
+      <ul>
+        <li>在「我的文件」中找到要分享的文件，展开操作菜单点击「分享」打开分享弹窗；</li>
+        <li>弹窗会列出你所在的全部群组，勾选目标群组后保存即可——可一次勾选多个；</li>
+        <li>取消所有勾选并保存等同于「取消分享」，文件状态会变回 <strong>私有</strong>；</li>
+        <li>分享操作只更新元数据，不会复制文件内容，对存储空间无额外消耗。</li>
+      </ul>
+
+      <h3>群组共享</h3>
+      <p>侧栏「群组共享」页展示 <strong>其他成员</strong> 分享到你所在任意群组的文件，可直接下载、预览，但无法删除或重命名（所有权仍属于原作者）。该页面与「我的文件」相互独立，自己分享出去的文件仍只在「我的文件」中显示。</p>
+
+      <div class="callout">
+        <div class="ic"><i data-lucide="shield-check"></i></div>
+        <div>权限规则：除文件所有者与管理员外，只有当文件被显式分享到 <strong>访问者所在的群组</strong> 时，下载 / 预览 / 元信息查询接口才会放行；其他情况一律返回 403。</div>
+      </div>
+    </section>
+
     <section class="doc-section" id="recent">
-      <h2><span class="num">07</span>最近访问</h2>
+      <h2><span class="num">08</span>最近访问</h2>
       <p class="lead">系统会自动记录最近打开、下载或预览过的文件，并按访问时间倒序展示。</p>
       <ul>
         <li>侧栏点击「最近访问」进入该页面；</li>
@@ -507,7 +540,7 @@ footer a:hover { color: var(--fg); }
     </section>
 
     <section class="doc-section" id="recycle">
-      <h2><span class="num">08</span>回收站与存储配额</h2>
+      <h2><span class="num">09</span>回收站与存储配额</h2>
       <p class="lead">删除不会立即清除 HDFS 数据，所有删除均先进入回收站并保留可恢复窗口。</p>
       <h3>回收站</h3>
       <ul>
@@ -520,42 +553,53 @@ footer a:hover { color: var(--fg); }
     </section>
 
     <section class="doc-section" id="dashboard">
-      <h2><span class="num">09</span>数据看板</h2>
-      <p class="lead">侧栏「数据看板」提供基于 ECharts 的多维统计视图。</p>
+      <h2><span class="num">10</span>数据看板</h2>
+      <p class="lead">侧栏「数据看板」融合 <strong>实时</strong>（Spark Structured Streaming）与 <strong>离线</strong>（Spark 批作业）两层指标，同屏展示当下系统活跃度与历史聚合趋势。</p>
+
+      <h3>实时面板（顶部）</h3>
+      <ul>
+        <li>页面顶部的实时区按 <strong>2 秒</strong> 一次轮询 <code>/api/stats/realtime</code>，展示最近 5 分钟内的动作计数、活跃用户、热门文件与事件流；</li>
+        <li>右上角的状态指示灯：绿色「在线」表示 Spark Streaming 作业正在消费 Kafka，灰色「离线」表示当前未启用 Kafka / Streaming（看板其它部分仍可正常使用）；</li>
+        <li>实时数据来自 Kafka topic <code>cloud_drive_events</code>，由 <code>spark_jobs/streaming_stats.py</code> 在 <code>foreachBatch</code> 中维护滚动窗口并写回 <code>cloud_drive_stats</code>。</li>
+      </ul>
+
+      <h3>离线统计</h3>
       <ul>
         <li><strong>文件类型分布</strong>：饼图展示各类型（文档 / 图片 / 视频 / 其他）占比；</li>
         <li><strong>上传趋势</strong>：折线图显示最近 7 / 30 天的每日上传量；</li>
         <li><strong>存储使用</strong>：条形图展示各用户空间占用；</li>
         <li><strong>热门文件</strong>：按下载量降序列出 Top 10 文件。</li>
       </ul>
+
       <div class="callout">
         <div class="ic"><i data-lucide="terminal"></i></div>
-        <div>统计数据由 Spark 批作业离线计算并写入 <code>cloud_drive_stats</code> 表。管理员可执行 <code>spark-submit spark_jobs/file_stats.py</code> 手动刷新。</div>
+        <div>离线数据由 Spark 批作业计算并写入 <code>cloud_drive_stats</code> 表。管理员可执行 <code>spark-submit spark_jobs/file_stats.py</code> 手动刷新；要启用实时面板需先 <code>docker compose -f docker-compose.kafka.yml up -d</code> 并启动 Streaming 作业。</div>
       </div>
     </section>
 
     <section class="doc-section" id="recommend">
-      <h2><span class="num">10</span>智能推荐</h2>
-      <p class="lead">基于 Spark 计算的 Jaccard 用户相似度与文件热度得分，为当前用户推荐可能感兴趣的文件。</p>
+      <h2><span class="num">11</span>群组智能推荐</h2>
+      <p class="lead">推荐结果在 <strong>群组语境</strong> 下计算：候选池只来自分享进你所在群组的文件，行为日志只取群组成员的操作。这意味着——你必须先加入或创建至少一个群组，推荐才会有内容。</p>
       <ul>
-        <li>侧栏点击「推荐」进入推荐页；</li>
-        <li>系统展示「相似用户也在看」「热门文件」「与你标签相关」三类推荐；</li>
-        <li>推荐结果每日更新，对应批作业为 <code>spark_jobs/recommendation.py</code>。</li>
+        <li>侧栏点击「推荐」进入推荐页，顶部会标注当前推荐的作用范围；</li>
+        <li>系统提供三类推荐：<strong>热门文件</strong>（按下载与浏览频次排序）、<strong>个性化推荐</strong>（基于你近期行为与组内文件标签匹配）、<strong>相似用户也在看</strong>（基于 Jaccard 相似度找出兴趣相近的组员，推荐他们偏好的文件）；</li>
+        <li>若你尚未加入任何群组，推荐页会提示 <code>scope: no_group</code> 并引导你前往「我的群组」创建或加入；管理员视角下推荐基于全站文件计算；</li>
+        <li>推荐结果由 <code>spark_jobs/recommendation.py</code> 离线计算，可由管理员定期重跑刷新。</li>
       </ul>
     </section>
 
     <section class="doc-section" id="admin">
-      <h2><span class="num">11</span>管理员后台</h2>
-      <p class="lead">仅 <code>admin</code> 角色可见。用于审计系统行为与管理用户。</p>
+      <h2><span class="num">12</span>管理员后台</h2>
+      <p class="lead">仅 <code>admin</code> 角色可见，侧栏会额外出现「操作日志」入口。</p>
       <ul>
-        <li><strong>操作日志</strong>：查看全量上传 / 下载 / 删除 / 登录日志，可按用户与时间筛选；</li>
-        <li><strong>用户管理</strong>：重置密码、启用 / 禁用账号、调整配额；</li>
-        <li><strong>系统概览</strong>：HBase 表行数、HDFS 使用率、活跃用户数等运行指标。</li>
+        <li><strong>操作日志</strong>：查看全量上传 / 下载 / 删除 / 登录 / 分享 / 群组等操作记录，按时间倒序展示，可用于审计与排查；</li>
+        <li>管理员同时拥有跨用户访问权：可下载、预览任意用户的文件，并对任意群组执行成员管理与解散；</li>
+        <li>用户管理、配额调整、系统概览等功能尚未在前端实现，可通过后端脚本（如 <code>scripts/data_lifecycle.py</code>）或直接操作 HBase 完成。</li>
       </ul>
     </section>
 
     <section class="doc-section" id="faq">
-      <h2><span class="num">12</span>常见问题</h2>
+      <h2><span class="num">13</span>常见问题</h2>
 
       <h3>上传失败，提示「HDFS 连接失败」？</h3>
       <p>请确认 HDFS NameNode 已在 9870 端口运行，并检查后端 <code>HDFS_URL</code> 环境变量配置是否正确。使用 <code>curl http://localhost:9870/webhdfs/v1/?op=LISTSTATUS</code> 可快速自检。</p>
@@ -571,6 +615,15 @@ footer a:hover { color: var(--fg); }
 
       <h3>文件关系图谱显示为空？</h3>
       <p>关系图谱需要至少两份文件共享标签。请先通过 AI 自动标签或手动添加标签，图谱便会自动构建。</p>
+
+      <h3>推荐页一直没有内容？</h3>
+      <p>推荐结果的范围限定在你所在的群组。若你尚未加入任何群组，请先到「我的群组」创建或加入一个群组，并确保群组内已有成员分享过文件，推荐才能产出结果。</p>
+
+      <h3>看板顶部一直显示「离线」？</h3>
+      <p>实时面板依赖 Kafka 与 Spark Structured Streaming。需先启动 Kafka（<code>docker compose -f docker-compose.kafka.yml up -d</code>），将后端的 <code>KAFKA_ENABLED</code> 设为 <code>1</code> 并重启，再运行 <code>spark-submit spark_jobs/streaming_stats.py</code>。未启用时不影响其它功能。</p>
+
+      <h3>把文件分享给某人，他在「群组共享」里看不到？</h3>
+      <p>分享是 <strong>面向群组</strong> 的，不是面向个人。请确认对方是你分享目标群组的成员；若不是，请先在「我的群组」中将其加入群组。</p>
     </section>
 
   </main>
