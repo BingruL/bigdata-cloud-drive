@@ -9,12 +9,12 @@
   <!-- ECharts -->
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
   <!-- Lucide Icons (self-hosted, jsdelivr 旧版本路径已 404) -->
-  <script src="/js/vendor/lucide.min.js?v=20260501"></script>
+  <script src="/js/vendor/lucide.min.js?v=20260501b"></script>
   <!-- Editorial typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;700&family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=20260501">
+  <link rel="stylesheet" href="css/style.css?v=20260501b">
 </head>
 <body>
   <div id="app">
@@ -135,9 +135,9 @@
                 <input v-model="searchKeyword" @keyup.enter="loadFiles" type="text" placeholder="搜索文件名...">
                 <button @click="loadFiles" class="btn-icon"><i data-lucide="search"></i></button>
               </div>
-              <select v-model="filterType" @change="loadFiles" class="filter-select" v-if="fileViewMode === 'list'">
+              <select v-model="filterType" @change="loadFiles(1)" class="filter-select" v-if="fileViewMode === 'list'">
                 <option value="">全部类型</option>
-                <option v-for="t in ['pdf','txt','jpg','png','zip','doc','xlsx','py','java','md']" :value="t">{{ t.toUpperCase() }}</option>
+                <option v-for="t in ['pdf','txt','md','jpg','jpeg','png','gif','zip','rar','7z','doc','docx','xls','xlsx','ppt','pptx','csv','json','py','java','js','ts','html','css','mp3','mp4']" :value="t">{{ t.toUpperCase() }}</option>
               </select>
               <label class="btn btn-primary upload-btn">
                 <i data-lucide="upload"></i> 上传文件
@@ -769,6 +769,6 @@
     <div v-if="toast" class="toast" :class="toast.type">{{ toast.message }}</div>
   </div>
 
-  <script src="js/app.js?v=20260501"></script>
+  <script src="js/app.js?v=20260501b"></script>
 </body>
 </html>
