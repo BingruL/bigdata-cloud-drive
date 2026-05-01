@@ -318,6 +318,9 @@ const app = createApp({
       if (!el || !data) return;
 
       const chart = echarts.init(el);
+      const nodeCount = (data.nodes || []).length;
+      const edgeCount = (data.edges || []).length;
+      const heavy = nodeCount > 120 || edgeCount > 400;
 
       // 文件类型颜色映射
       const typeColors = {
@@ -335,34 +338,56 @@ const app = createApp({
         itemStyle: { color: typeColors[c] || "#64748b" },
       }));
 
-      const nodes = data.nodes.map(n => ({
-        id: n.id,
-        name: n.name,
-        symbolSize: Math.min(Math.max(20, Math.sqrt(n.size / 1024) * 2), 60),
-        category: categories.indexOf(n.type || "other"),
-        itemStyle: { color: typeColors[n.type] || "#64748b" },
-        label: {
-          show: true,
-          formatter: n.name.length > 10 ? n.name.substring(0, 10) + "..." : n.name,
-          fontSize: 11,
-          color: "#4a5568",
-        },
-        _raw: n,
-      }));
+      // 统计每个节点的度数（用于按重要性缩放）
+      const degree = {};
+      (data.edges || []).forEach(e => {
+        degree[e.source] = (degree[e.source] || 0) + 1;
+        degree[e.target] = (degree[e.target] || 0) + 1;
+      });
+      const maxDeg = Math.max(1, ...Object.values(degree));
+
+      const nodes = data.nodes.map(n => {
+        const d = degree[n.id] || 0;
+        const color = typeColors[n.type] || "#64748b";
+        // 节点大小：度数 + 文件大小综合
+        const sizeBase = 14 + (d / maxDeg) * 32 + Math.min(12, Math.sqrt(n.size / 1024 / 64));
+        return {
+          id: n.id,
+          name: n.name,
+          symbolSize: Math.max(12, Math.min(56, sizeBase)),
+          category: categories.indexOf(n.type || "other"),
+          itemStyle: {
+            color,
+            borderColor: "rgba(255,255,255,0.85)",
+            borderWidth: 1.5,
+          },
+          label: {
+            show: !heavy,
+            position: "right",
+            formatter: n.name.length > 14 ? n.name.substring(0, 14) + "…" : n.name,
+            fontSize: 10,
+            color,
+            fontWeight: d > maxDeg * 0.5 ? "bold" : "normal",
+          },
+          _raw: n,
+          _degree: d,
+        };
+      });
 
       const edges = data.edges.map(e => ({
         source: e.source,
         target: e.target,
         lineStyle: {
-          width: Math.max(1, e.weight * 6),
-          opacity: 0.4 + e.weight * 0.4,
-          color: "#b0bdd0",
-          curveness: 0.15,
+          width: Math.max(0.8, e.weight * 3.5),
+          opacity: 0.55,
+          color: "source",
+          curveness: 0,
         },
       }));
 
       chart.setOption({
         backgroundColor: "transparent",
+        animation: !heavy,
         tooltip: {
           trigger: "item",
           formatter: function (params) {
@@ -373,12 +398,13 @@ const app = createApp({
               html += `<div>大小: ${formatSize(d.size)}</div>`;
               html += `<div>所有者: ${d.owner}</div>`;
               html += `<div>下载: ${d.downloads} 次</div>`;
+              html += `<div>关联数: ${params.data._degree}</div>`;
               if (d.tags) html += `<div>标签: ${d.tags}</div>`;
               if (d.summary) html += `<div style="max-width:250px;margin-top:4px;color:#718096">${d.summary.substring(0, 80)}...</div>`;
               return html;
             }
             if (params.dataType === "edge") {
-              return `关联强度: ${(params.data.lineStyle.width / 6).toFixed(2)}`;
+              return `关联强度: ${(params.data.lineStyle.width / 3.5).toFixed(2)}`;
             }
           },
         },
@@ -396,20 +422,30 @@ const app = createApp({
           edges: edges,
           categories: categoryList,
           roam: true,
-          draggable: true,
+          draggable: !heavy,
+          // 让力导布局充满整个画布
+          left: 30,
+          right: 30,
+          top: 50,
+          bottom: 60,
           force: {
-            repulsion: 300,
-            edgeLength: [80, 200],
-            gravity: 0.1,
-            layoutAnimation: true,
+            // 大幅增强斥力，避免节点堆叠
+            repulsion: heavy ? 200 : 600,
+            edgeLength: heavy ? [30, 80] : [60, 140],
+            gravity: 0.08,
+            friction: 0.35,
+            layoutAnimation: !heavy,
           },
           emphasis: {
             focus: "adjacency",
-            lineStyle: { width: 4, color: "#4f6ef7" },
-            itemStyle: { shadowBlur: 10, shadowColor: "rgba(79,110,247,0.35)" },
+            scale: true,
+            lineStyle: { width: 3, opacity: 0.9 },
+            label: { fontWeight: "bold", fontSize: 12 },
+            itemStyle: { shadowBlur: 14, shadowColor: "rgba(79,110,247,0.45)" },
           },
-          label: { position: "bottom" },
-          lineStyle: { curveness: 0.15 },
+          label: { position: "right" },
+          lineStyle: { curveness: 0 },
+          autoCurveness: false,
         }],
       });
 
