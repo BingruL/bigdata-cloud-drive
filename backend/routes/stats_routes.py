@@ -158,6 +158,13 @@ def realtime_stats():
                 pass
         else:
             result[k] = None
+    # 心跳行：streaming 作业即使空闲也每 5 秒刷新一次，这是判定在线的主依据
+    hb = hbase.get_stats(config.HBASE_TABLE_STATS, "realtime_heartbeat")
+    if hb:
+        try:
+            latest_update = max(latest_update, int(hb["updated_at"]))
+        except (TypeError, ValueError):
+            pass
     result["updated_at"] = latest_update or None
     # 用更新时间和当前时间差判断 streaming 是否在线（30 秒内有更新视为在线）
     if latest_update:

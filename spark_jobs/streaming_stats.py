@@ -27,6 +27,7 @@ import os
 import sys
 import json
 import time
+import threading
 from collections import deque, Counter
 
 from pyspark.sql import SparkSession
@@ -173,6 +174,17 @@ def main():
              .trigger(processingTime=TRIGGER_INTERVAL)
              .option("checkpointLocation", "/tmp/cloud-drive-streaming-ckpt")
              .start())
+
+    # 心跳线程：每 5 秒写一次 realtime_heartbeat，保证空闲时后端仍能识别 Streaming 在线
+    def _heartbeat_loop():
+        while True:
+            try:
+                _save_stats_to_hbase([("realtime_heartbeat", {"ts": int(time.time() * 1000)})])
+            except Exception as e:
+                print(f"[heartbeat] 写入失败: {e}", file=sys.stderr)
+            time.sleep(5)
+
+    threading.Thread(target=_heartbeat_loop, daemon=True).start()
 
     print("Streaming 已启动，等待事件...")
     query.awaitTermination()
