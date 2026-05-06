@@ -44,8 +44,11 @@ data/
 logs/
 
 # Tool artifacts
-.codex
+.codex/
 .claude/
+
+# Runtime pid files written by scripts/start_full.sh
+.run/
 
 # Spark Structured Streaming checkpoint
 /tmp/cloud-drive-streaming-ckpt/

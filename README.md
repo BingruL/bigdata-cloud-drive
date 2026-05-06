@@ -121,7 +121,51 @@ export AI_MODEL=qwen2.5:7b
 
 ## 四、启动运行
 
-### 4.1 首次启动（初始化 + 测试数据）
+### 4.1 推荐启动（完整链路）
+
+项目根目录下提供了一键完整启动脚本，适合演示和联调：
+
+```bash
+cd bigdata-cloud-drive
+./scripts/start_full.sh
+
+# 等价 Makefile 命令
+make start-full
+```
+
+`start_full.sh` 会按需启动并检查：
+
+1. HDFS（NameNode / DataNode）
+2. HBase（HMaster / HRegionServer）
+3. HBase Thrift Server（默认 `localhost:9090`）
+4. Kafka 单节点容器（默认 `cloud-drive-kafka`，端口 `9092`）
+5. Flask Web 服务（默认 `http://localhost:5000`）
+6. Kafka 日志 consumer
+7. Spark Streaming 实时统计作业（如果本机已安装 `spark-submit`）
+
+常用运维命令：
+
+```bash
+./scripts/status_full.sh   # 查看 HDFS / HBase / Kafka / Flask / Streaming 状态
+./scripts/stop_full.sh     # 停止完整链路
+
+# 等价 Makefile 命令
+make status-full
+make stop-full
+```
+
+日志位置：
+
+```bash
+logs/flask.log
+logs/kafka-consumer.log
+logs/spark-streaming.log
+logs/hbase-thrift.log
+```
+
+> 若脚本提示 Docker daemon 不可访问，请先启动 Docker Desktop，并确认 WSL integration 已开启。
+
+### 4.2 首次初始化（初始化 + 测试数据）
 
 ```bash
 python run.py --seed
@@ -134,7 +178,11 @@ python run.py --seed
 4. 生成 20 条测试文件记录、100 条操作日志、2 个示例群组（大数据课程组 / 运维小组）及部分群组共享文件
 5. 启动 Web 服务
 
-### 4.2 正常启动
+首次准备演示环境时，建议先执行一次 `python run.py --seed` 完成初始化；之后日常演示再使用 `./scripts/start_full.sh` 启动完整链路。
+
+### 4.3 轻量启动（仅后端 Web 服务）
+
+如果只想启动 Flask 后端，不启用 Kafka consumer / Spark Streaming，可使用：
 
 ```bash
 python run.py
@@ -142,7 +190,9 @@ python run.py
 python run.py --port 8080
 ```
 
-### 4.3 访问系统
+此模式下 Kafka 默认不启用，操作日志会直接写入 HBase，核心上传、下载、权限、看板等功能仍可运行。
+
+### 4.4 访问系统
 
 浏览器打开 `http://localhost:5000`
 
@@ -428,6 +478,14 @@ Flask 路由 ──► EventBus.log(username, action, detail)
 后续可在同一个 topic 上扩展 Spark Streaming 实时大屏、Flume HDFS 冷归档等多个消费者，实现 Lambda 架构的 speed layer。
 
 ### 10.2 启动 Kafka
+
+推荐直接使用完整启动脚本，它会自动拉起 Kafka 容器、Flask producer、日志 consumer 和 Spark Streaming：
+
+```bash
+./scripts/start_full.sh
+```
+
+如果需要单独调试 Kafka 链路，也可以按下面步骤手动启动：
 
 ```bash
 # 1. 拉起单节点 Kafka（KRaft 模式，无需 ZK）

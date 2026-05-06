@@ -21,6 +21,38 @@ import argparse
 # 确保能导入 backend 模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+
+def load_dotenv_local():
+    """启动时自动加载项目根目录的 .env.local，省去每次手动 source。
+
+    支持 `KEY=VALUE` 与 `export KEY=VALUE` 两种写法，跳过空行与 # 开头的注释。
+    若变量已在当前环境中设置则不覆盖（以便临时用 `KEY=xxx python run.py` 覆盖）。
+    """
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env.local")
+    if not os.path.isfile(env_path):
+        return
+    loaded = []
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):].lstrip()
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+                loaded.append(key)
+    if loaded:
+        print(f"[env] 从 .env.local 载入: {', '.join(loaded)}")
+
+
+load_dotenv_local()
+
 from backend.config import get_config
 from backend.auth.jwt_handler import hash_password
 
