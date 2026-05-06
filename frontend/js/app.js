@@ -1058,14 +1058,23 @@ const app = createApp({
 
     function getFileIcon(type) {
       const icons = {
-        pdf: "📄", txt: "📝", md: "📝", doc: "📃", docx: "📃",
-        jpg: "🖼", jpeg: "🖼", png: "🖼", gif: "🖼", svg: "🖼",
-        zip: "📦", rar: "📦", "7z": "📦", tar: "📦", gz: "📦",
-        py: "🐍", java: "☕", js: "⚡", ts: "⚡", html: "🌐", css: "🎨",
-        csv: "📊", xlsx: "📊", xls: "📊", json: "📋", xml: "📋",
-        mp3: "🎵", mp4: "🎬", avi: "🎬", wav: "🎵",
+        pdf: "📕", txt: "📝", md: "📝", rtf: "📝",
+        doc: "📘", docx: "📘",
+        ppt: "📙", pptx: "📙", key: "📙",
+        xls: "📗", xlsx: "📗", csv: "📗", numbers: "📗", tsv: "📗",
+        jpg: "🖼", jpeg: "🖼", png: "🖼", gif: "🖼", svg: "🖼", bmp: "🖼", webp: "🖼", ico: "🖼",
+        zip: "📦", rar: "📦", "7z": "📦", tar: "📦", gz: "📦", bz2: "📦", xz: "📦",
+        py: "🐍", java: "☕", js: "⚡", ts: "⚡", jsx: "⚡", tsx: "⚡",
+        html: "🌐", htm: "🌐", css: "🎨", scss: "🎨", less: "🎨",
+        c: "🔧", cpp: "🔧", h: "🔧", hpp: "🔧", go: "🐹", rs: "🦀", rb: "💎", php: "🐘", sh: "🖥", bat: "🖥",
+        json: "📋", xml: "📋", yaml: "📋", yml: "📋", toml: "📋", ini: "📋",
+        sql: "🗄", db: "🗄", sqlite: "🗄",
+        mp3: "🎵", wav: "🎵", flac: "🎵", aac: "🎵", ogg: "🎵", m4a: "🎵",
+        mp4: "🎬", avi: "🎬", mov: "🎬", mkv: "🎬", webm: "🎬", flv: "🎬",
+        ttf: "🔤", otf: "🔤", woff: "🔤", woff2: "🔤",
+        exe: "⚙", dll: "⚙", apk: "📱", iso: "💿",
       };
-      return icons[(type || "").toLowerCase()] || "📁";
+      return icons[(type || "").toLowerCase()] || "📄";
     }
 
     function actionLabel(action) {
