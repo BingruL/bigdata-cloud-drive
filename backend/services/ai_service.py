@@ -202,17 +202,18 @@ class AIService:
         candidates.sort(key=lambda x: x["score"], reverse=True)
         return candidates[:top_n]
 
-    def compute_file_relations(self, all_files, threshold=0.15):
+    def compute_file_relations(self, all_files, threshold=0.15, max_edges_per_node=8):
         """
-        计算文件之间的关联关系
-        策略：
-        1. 基于标签重叠度（Jaccard 相似度）
-        2. 基于文件类型相同
-        3. 基于文件名关键词相似
-        返回节点和边的列表，用于前端力导向图可视化
+        计算文件之间的关联关系（标签 Jaccard 0.5 + 同类型 0.25 + 文件名关键词 Jaccard 0.25）。
+        用倒排索引（tag/type/keyword -> file_ids）只对有交集的候选对计算分数，
+        避免 N 大时 O(N²) 暴力比较；并对每个节点保留 top-K 条边，
+        防止前端力导向图因边数爆炸卡死。
         """
         nodes = []
         edges = []
+        _tag_index = defaultdict(list)
+        _type_index = defaultdict(list)
+        _keyword_index = defaultdict(list)
 
         # 预处理每个文件的特征
         file_features = []
@@ -227,56 +228,83 @@ class AIService:
             name_no_ext = filename.rsplit(".", 1)[0] if "." in filename else filename
             name_keywords = {w.lower() for w in re.split(r'[_\-\s.\u3000]+', name_no_ext) if len(w) >= 2}
 
+            idx = len(file_features)
             file_features.append({
                 "file": f,
                 "tags": tags,
                 "type": ftype,
                 "keywords": name_keywords,
             })
+            for t in tags:
+                _tag_index[t].append(idx)
+            if ftype:
+                _type_index[ftype].append(idx)
+            for kw in name_keywords:
+                _keyword_index[kw].append(idx)
 
-            # 构建节点
+            summary_text = f.get("summary", "") or ""
             nodes.append({
                 "id": f["file_id"],
                 "name": filename,
                 "type": ftype,
-                "size": int(f.get("size", 0)),
+                "size": int(f.get("size", 0) or 0),
                 "owner": f.get("owner", ""),
-                "downloads": int(f.get("downloads", 0)),
+                "downloads": int(f.get("downloads", 0) or 0),
                 "tags": raw_tags,
-                "summary": f.get("summary", ""),
+                "summary": summary_text[:120],
             })
 
-        # 计算文件两两之间的相似度
-        for i in range(len(file_features)):
-            for j in range(i + 1, len(file_features)):
-                fi = file_features[i]
-                fj = file_features[j]
-                score = 0.0
+        # 用倒排索引收集候选对，避免 O(N²)。同质组（如全是 pdf）截断到 64 防退化。
+        candidate_pairs = set()
+        for _index in (_tag_index, _type_index, _keyword_index):
+            for ids in _index.values():
+                if len(ids) < 2:
+                    continue
+                ids_capped = ids[:64] if len(ids) > 64 else ids
+                for a in range(len(ids_capped)):
+                    for b in range(a + 1, len(ids_capped)):
+                        x, y = ids_capped[a], ids_capped[b]
+                        candidate_pairs.add((x, y) if x < y else (y, x))
 
-                # 1. 标签相似度（权重 0.5）
-                if fi["tags"] and fj["tags"]:
-                    intersection = len(fi["tags"] & fj["tags"])
-                    union = len(fi["tags"] | fj["tags"])
-                    if union > 0:
-                        score += 0.5 * (intersection / union)
+        per_node_edges = defaultdict(list)
+        for i, j in candidate_pairs:
+            fi = file_features[i]
+            fj = file_features[j]
+            score = 0.0
 
-                # 2. 文件类型相同（权重 0.25）
-                if fi["type"] and fj["type"] and fi["type"] == fj["type"]:
-                    score += 0.25
+            if fi["tags"] and fj["tags"]:
+                intersection = len(fi["tags"] & fj["tags"])
+                union = len(fi["tags"] | fj["tags"])
+                if union > 0:
+                    score += 0.5 * (intersection / union)
 
-                # 3. 文件名关键词相似度（权重 0.25）
-                if fi["keywords"] and fj["keywords"]:
-                    kw_intersection = len(fi["keywords"] & fj["keywords"])
-                    kw_union = len(fi["keywords"] | fj["keywords"])
-                    if kw_union > 0:
-                        score += 0.25 * (kw_intersection / kw_union)
+            if fi["type"] and fj["type"] and fi["type"] == fj["type"]:
+                score += 0.25
 
-                if score >= threshold:
-                    edges.append({
-                        "source": fi["file"]["file_id"],
-                        "target": fj["file"]["file_id"],
-                        "weight": round(score, 3),
-                    })
+            if fi["keywords"] and fj["keywords"]:
+                kw_intersection = len(fi["keywords"] & fj["keywords"])
+                kw_union = len(fi["keywords"] | fj["keywords"])
+                if kw_union > 0:
+                    score += 0.25 * (kw_intersection / kw_union)
+
+            if score >= threshold:
+                per_node_edges[i].append((score, j))
+                per_node_edges[j].append((score, i))
+
+        # 每个节点保留 top-K 边，避免 hairball 把前端力导向图卡死
+        seen = set()
+        for i, lst in per_node_edges.items():
+            lst.sort(reverse=True)
+            for score, j in lst[:max_edges_per_node]:
+                key = (i, j) if i < j else (j, i)
+                if key in seen:
+                    continue
+                seen.add(key)
+                edges.append({
+                    "source": file_features[key[0]]["file"]["file_id"],
+                    "target": file_features[key[1]]["file"]["file_id"],
+                    "weight": round(score, 3),
+                })
 
         return {"nodes": nodes, "edges": edges}
 
