@@ -1162,7 +1162,7 @@ h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; color: var(--ink);
   position: relative; overflow: hidden;
 }
 .graph-main::before {
-  content: "RELATIONAL TOPOLOGY · 關係圖譜";
+  content: "RELATIONAL TOPOLOGY · 关系图谱";
   position: absolute; top: 16px; left: 20px;
   font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.28em;
   color: var(--ink-faint); z-index: 5;
