@@ -16,7 +16,12 @@ def _now_ms():
 
 
 def _json_object():
-    body = request.get_json(silent=True)
+    if not request.data:
+        return {}
+    try:
+        body = request.get_json(silent=False)
+    except Exception:
+        return None
     if body is None:
         return {}
     if not isinstance(body, dict):
@@ -37,6 +42,40 @@ def _get_existing_active_file(hbase, config, file_id):
     if not meta or meta.get("deleted") == "1":
         return None, (jsonify({"error": "文件不存在"}), 404)
     return meta, None
+
+
+def _get_existing_file(hbase, config, file_id):
+    meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
+    if not meta:
+        return None, (jsonify({"error": "文件不存在"}), 404)
+    return meta, None
+
+
+def _parse_expires_in_days(body):
+    raw_days = body.get("expires_in_days", 7)
+    if isinstance(raw_days, bool):
+        return None
+    if isinstance(raw_days, int):
+        expires_in_days = raw_days
+    elif isinstance(raw_days, str) and raw_days.strip().isdigit():
+        expires_in_days = int(raw_days.strip())
+    else:
+        return None
+    if expires_in_days < 1 or expires_in_days > 365:
+        return None
+    return expires_in_days
+
+
+def _parse_password(body):
+    password = body.get("password", "")
+    if password is None:
+        return ""
+    if not isinstance(password, str):
+        return None
+    password = password.strip()
+    if len(password) > 128:
+        return None
+    return password
 
 
 def _link_unavailable(link, meta):
@@ -81,18 +120,14 @@ def create_public_link(file_id):
     if body is None:
         return jsonify({"error": "请求体必须是 JSON 对象"}), 400
 
-    raw_days = body.get("expires_in_days", 7)
-    try:
-        if isinstance(raw_days, bool):
-            raise ValueError()
-        expires_in_days = int(raw_days)
-    except (TypeError, ValueError):
-        return jsonify({"error": "expires_in_days 必须是 1 到 365 的整数"}), 400
-    if expires_in_days < 1 or expires_in_days > 365:
+    expires_in_days = _parse_expires_in_days(body)
+    if expires_in_days is None:
         return jsonify({"error": "expires_in_days 必须是 1 到 365 的整数"}), 400
 
-    password = body.get("password")
-    password_hash = hash_password(str(password)) if password not in (None, "") else ""
+    password = _parse_password(body)
+    if password is None:
+        return jsonify({"error": "password 必须是 128 字符以内的字符串"}), 400
+    password_hash = hash_password(password) if password else ""
     now = _now_ms()
     token = secrets.token_urlsafe(32)
     link = {
@@ -107,7 +142,8 @@ def create_public_link(file_id):
         "last_download_at": "",
     }
     hbase.save_public_link(config.HBASE_TABLE_PUBLIC_LINKS, token, link)
-    return jsonify({"public_link": _public_link_response(link)}), 201
+    response = _public_link_response(link)
+    return jsonify({"public_link": response, **response}), 201
 
 
 @public_link_bp.route("/files/<file_id>/public-links", methods=["GET"])
@@ -116,14 +152,15 @@ def list_public_links(file_id):
     config = current_app.config["APP_CONFIG"]
     hbase = current_app.config["HBASE_SERVICE"]
 
-    meta, err = _get_existing_active_file(hbase, config, file_id)
+    meta, err = _get_existing_file(hbase, config, file_id)
     if err:
         return err
     if not _is_owner_or_admin(meta):
         return jsonify({"error": "无权查看公共链接"}), 403
 
     links = hbase.list_public_links_for_file(config.HBASE_TABLE_PUBLIC_LINKS, file_id)
-    return jsonify({"public_links": [_public_link_response(link) for link in links]})
+    response_links = [_public_link_response(link) for link in links]
+    return jsonify({"public_links": response_links, "links": response_links})
 
 
 @public_link_bp.route("/files/<file_id>/public-links/<token>", methods=["DELETE"])
@@ -132,7 +169,7 @@ def revoke_public_link(file_id, token):
     config = current_app.config["APP_CONFIG"]
     hbase = current_app.config["HBASE_SERVICE"]
 
-    meta, err = _get_existing_active_file(hbase, config, file_id)
+    meta, err = _get_existing_file(hbase, config, file_id)
     if err:
         return err
     if not _is_owner_or_admin(meta):
@@ -194,9 +231,9 @@ def download_public_link(token):
         hbase.increment_downloads(config.HBASE_TABLE_FILES, link["file_id"])
         current_app.config["EVENT_BUS"].log(link.get("owner", "public"), "public_download", link["file_id"])
         return send_file(temp_path, as_attachment=True, download_name=_display_name(meta))
-    except Exception as e:
-        current_app.logger.error(f"公共链接下载失败: {e}")
-        return jsonify({"error": f"公共链接下载失败: {str(e)}"}), 500
+    except Exception:
+        current_app.logger.exception("公共链接下载失败")
+        return jsonify({"error": "公共链接下载失败，请稍后重试"}), 500
 
 
 def _public_link_response(link):

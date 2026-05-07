@@ -15,6 +15,7 @@ def _upload(client, headers, filename="hello.txt", content=b"hello world"):
 def _create_link(client, headers, file_id, body=None):
     rv = client.post(f"/api/files/{file_id}/public-links", headers=headers, json=body or {})
     assert rv.status_code == 201
+    assert rv.get_json()["token"]
     return rv.get_json()["public_link"]
 
 
@@ -67,6 +68,73 @@ def test_non_owner_cannot_create_public_link(client, alice, bob):
 
     rv = client.post(f"/api/files/{file_info['file_id']}/public-links", headers=bh, json={})
     assert rv.status_code == 403
+
+
+def test_admin_can_create_list_and_revoke_public_link(client, alice, admin):
+    _, _, ah = alice
+    _, _, admin_headers = admin
+    file_info = _upload(client, ah, "admin-visible.txt", b"x")
+
+    created = client.post(f"/api/files/{file_info['file_id']}/public-links", headers=admin_headers, json={})
+    assert created.status_code == 201
+    token = created.get_json()["token"]
+
+    listed = client.get(f"/api/files/{file_info['file_id']}/public-links", headers=admin_headers)
+    assert listed.status_code == 200
+    assert any(link["token"] == token for link in listed.get_json()["links"])
+
+    revoked = client.delete(
+        f"/api/files/{file_info['file_id']}/public-links/{token}",
+        headers=admin_headers,
+    )
+    assert revoked.status_code == 200
+
+
+def test_non_owner_cannot_list_or_revoke_public_links(client, alice, bob):
+    _, _, ah = alice
+    _, _, bh = bob
+    file_info = _upload(client, ah, "private-links.txt", b"x")
+    link = _create_link(client, ah, file_info["file_id"])
+
+    listed = client.get(f"/api/files/{file_info['file_id']}/public-links", headers=bh)
+    revoked = client.delete(
+        f"/api/files/{file_info['file_id']}/public-links/{link['token']}",
+        headers=bh,
+    )
+
+    assert listed.status_code == 403
+    assert revoked.status_code == 403
+
+
+def test_owner_can_list_and_revoke_link_for_trashed_file(client, alice):
+    _, _, headers = alice
+    file_info = _upload(client, headers, "trashed-link.txt", b"x")
+    link = _create_link(client, headers, file_info["file_id"])
+    assert client.delete(f"/api/files/{file_info['file_id']}", headers=headers).status_code == 200
+
+    listed = client.get(f"/api/files/{file_info['file_id']}/public-links", headers=headers)
+    revoked = client.delete(
+        f"/api/files/{file_info['file_id']}/public-links/{link['token']}",
+        headers=headers,
+    )
+
+    assert listed.status_code == 200
+    assert any(item["token"] == link["token"] for item in listed.get_json()["links"])
+    assert revoked.status_code == 200
+
+
+def test_public_link_create_rejects_invalid_input(client, alice):
+    _, _, headers = alice
+    file_info = _upload(client, headers, "invalid-input.txt", b"x")
+    path = f"/api/files/{file_info['file_id']}/public-links"
+
+    malformed = client.post(path, headers={**headers, "Content-Type": "application/json"}, data='{"password":')
+    float_days = client.post(path, headers=headers, json={"expires_in_days": 1.9})
+    bad_password = client.post(path, headers=headers, json={"password": ["pw"]})
+
+    assert malformed.status_code == 400
+    assert float_days.status_code == 400
+    assert bad_password.status_code == 400
 
 
 def test_revoke_prevents_public_download(client, alice):
