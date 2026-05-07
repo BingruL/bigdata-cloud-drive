@@ -539,6 +539,7 @@ def purge_file(file_id):
                 hdfs.delete_file(hdfs_path)
             except Exception as e:
                 current_app.logger.warning(f"HDFS 文件删除失败（继续清理元数据）: {e}")
+        hbase.disable_public_links_for_file(config.HBASE_TABLE_PUBLIC_LINKS, file_id)
         hbase.delete_file_meta(config.HBASE_TABLE_FILES, file_id)
         current_app.config["EVENT_BUS"].log(g.current_user, "purge", file_id)
         return jsonify({"message": "文件已彻底删除"})

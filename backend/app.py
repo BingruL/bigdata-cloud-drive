@@ -20,6 +20,7 @@ from .routes.file_routes import file_bp
 from .routes.folder_routes import folder_bp
 from .routes.stats_routes import stats_bp, ai_bp
 from .routes.group_routes import group_bp
+from .routes.public_link_routes import public_link_bp
 
 # 配置日志
 logging.basicConfig(
@@ -99,6 +100,7 @@ def create_app():
     app.register_blueprint(stats_bp)
     app.register_blueprint(ai_bp)
     app.register_blueprint(group_bp)
+    app.register_blueprint(public_link_bp)
 
     # 前端页面路由
     @app.route("/")

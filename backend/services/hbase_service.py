@@ -655,6 +655,83 @@ class HBaseService:
             })
             return True
 
+    # ========== 公共链接 ==========
+
+    def save_public_link(self, table_name, token, link):
+        """保存公共链接元数据。RowKey: token。"""
+        with self._get_connection() as conn:
+            table = conn.table(table_name)
+            data = {}
+            for k, v in link.items():
+                data[f"meta:{k}".encode()] = str(v).encode()
+            table.put(token.encode(), data)
+            return token
+
+    def get_public_link(self, table_name, token):
+        """按 token 获取公共链接。"""
+        with self._get_connection() as conn:
+            table = conn.table(table_name)
+            row = table.row(token.encode())
+            if not row:
+                return None
+            result = {"token": token}
+            for k, v in row.items():
+                col = k.decode().split(":", 1)[1]
+                result[col] = v.decode()
+            return result
+
+    def list_public_links_for_file(self, table_name, file_id):
+        """列出某个文件的所有公共链接。"""
+        links = []
+        with self._get_connection() as conn:
+            table = conn.table(table_name)
+            for key, data in table.scan():
+                link = {"token": key.decode()}
+                for k, v in data.items():
+                    col = k.decode().split(":", 1)[1]
+                    link[col] = v.decode()
+                if link.get("file_id") == file_id:
+                    links.append(link)
+        links.sort(key=lambda x: x.get("created_at", "0"), reverse=True)
+        return links
+
+    def revoke_public_link(self, table_name, token):
+        """撤销单个公共链接。"""
+        with self._get_connection() as conn:
+            table = conn.table(table_name)
+            row = table.row(token.encode())
+            if not row:
+                return False
+            table.put(token.encode(), {b"meta:enabled": b"0"})
+            return True
+
+    def disable_public_links_for_file(self, table_name, file_id):
+        """禁用某个文件的全部公共链接。"""
+        affected = 0
+        with self._get_connection() as conn:
+            table = conn.table(table_name)
+            for key, data in table.scan():
+                if data.get(b"meta:file_id", b"").decode() != file_id:
+                    continue
+                table.put(key, {b"meta:enabled": b"0"})
+                affected += 1
+        return affected
+
+    def increment_public_link_download(self, table_name, token):
+        """增加公共链接下载次数并记录最后下载时间。"""
+        with self._get_connection() as conn:
+            table = conn.table(table_name)
+            row = table.row(token.encode())
+            if not row:
+                return 0
+            current = int(row.get(b"meta:download_count", b"0").decode() or 0)
+            new_count = current + 1
+            table.put(token.encode(), {
+                b"meta:download_count": str(new_count).encode(),
+                b"meta:last_download_at": str(int(time.time() * 1000)).encode(),
+            })
+            return new_count
+
     # ========== 群组：双表反向索引 ==========
     # cloud_drive_groups        rowkey=group_id          列族 info
     # cloud_drive_group_members rowkey={gid}#{username}  列族 info

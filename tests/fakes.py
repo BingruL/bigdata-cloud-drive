@@ -164,6 +164,50 @@ class FakeHBaseService:
         row["shared_groups"] = shared_str
         return True
 
+    def save_public_link(self, table_name, token, link):
+        self._t(table_name)[token] = dict(link)
+        return token
+
+    def get_public_link(self, table_name, token):
+        row = self._t(table_name).get(token)
+        if not row:
+            return None
+        return {"token": token, **row}
+
+    def list_public_links_for_file(self, table_name, file_id):
+        links = [
+            {"token": token, **row}
+            for token, row in self._t(table_name).items()
+            if row.get("file_id") == file_id
+        ]
+        links.sort(key=lambda x: x.get("created_at", "0"), reverse=True)
+        return links
+
+    def revoke_public_link(self, table_name, token):
+        row = self._t(table_name).get(token)
+        if not row:
+            return False
+        row["enabled"] = "0"
+        return True
+
+    def disable_public_links_for_file(self, table_name, file_id):
+        affected = 0
+        for row in self._t(table_name).values():
+            if row.get("file_id") != file_id:
+                continue
+            row["enabled"] = "0"
+            affected += 1
+        return affected
+
+    def increment_public_link_download(self, table_name, token):
+        row = self._t(table_name).get(token)
+        if not row:
+            return 0
+        cur = int(row.get("download_count", "0") or 0) + 1
+        row["download_count"] = str(cur)
+        row["last_download_at"] = str(int(time.time() * 1000))
+        return cur
+
     def remove_group_from_all_files(self, table_name, group_id):
         affected = 0
         for row in self._t(table_name).values():
