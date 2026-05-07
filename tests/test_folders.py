@@ -48,6 +48,11 @@ def test_admin_browse_only_lists_own_files(client, app, alice, admin):
 def test_browse_child_file_not_limited_by_first_page(client, app, alice):
     config = app.config["APP_CONFIG"]
     hbase = app.config["HBASE_SERVICE"]
+    hbase.create_folder(config.HBASE_TABLE_FOLDERS, "folder-1", {
+        "name": "child-folder",
+        "owner": "alice",
+        "parent_id": "root",
+    })
     for i in range(config.MAX_PAGE_SIZE + 1):
         hbase.save_file_meta(config.HBASE_TABLE_FILES, f"root-file-{i}", {
             "filename": f"root-{i}.txt",
@@ -232,6 +237,95 @@ def test_delete_restore_purge_folder_tree_including_child_files(client, app, ali
     assert hbase.get_folder(config.HBASE_TABLE_FOLDERS, child["folder_id"]) is None
     assert hbase.get_file_meta(config.HBASE_TABLE_FILES, fid) is None
     assert not hdfs.file_exists(hdfs_path)
+
+
+def test_restore_folder_preserves_previously_deleted_child_file(client, alice):
+    _, _, headers = alice
+    parent = _create_folder(client, headers, "父")
+    uploaded = _upload(client, headers, "报告.txt", b"hello", parent["folder_id"])
+    fid = uploaded.get_json()["file"]["file_id"]
+
+    assert client.delete(f"/api/files/{fid}", headers=headers).status_code == 200
+    assert client.delete(f"/api/folders/{parent['folder_id']}", headers=headers).status_code == 200
+    assert client.post(f"/api/folders/{parent['folder_id']}/restore", headers=headers).status_code == 200
+
+    assert client.get(f"/api/files/{fid}", headers=headers).status_code == 404
+
+
+def test_restore_legacy_deleted_folder_without_delete_source_marker(client, app, alice):
+    _, _, headers = alice
+    parent = _create_folder(client, headers, "父")
+    uploaded = _upload(client, headers, "报告.txt", b"hello", parent["folder_id"])
+    fid = uploaded.get_json()["file"]["file_id"]
+
+    config = app.config["APP_CONFIG"]
+    hbase = app.config["HBASE_SERVICE"]
+    hbase.update_folder_fields(config.HBASE_TABLE_FOLDERS, parent["folder_id"], {
+        "deleted": "1",
+        "deleted_at": "1",
+    })
+    hbase.update_file_meta_fields(config.HBASE_TABLE_FILES, fid, {
+        "deleted": "1",
+        "deleted_at": "1",
+    })
+
+    restored = client.post(f"/api/folders/{parent['folder_id']}/restore", headers=headers)
+
+    assert restored.status_code == 200
+    assert client.get(f"/api/files/{fid}", headers=headers).status_code == 200
+
+
+def test_reject_partial_restore_under_deleted_folder(client, alice):
+    _, _, headers = alice
+    parent = _create_folder(client, headers, "父")
+    child = _create_folder(client, headers, "子", parent["folder_id"])
+    uploaded = _upload(client, headers, "报告.txt", b"hello", child["folder_id"])
+    fid = uploaded.get_json()["file"]["file_id"]
+
+    assert client.delete(f"/api/folders/{parent['folder_id']}", headers=headers).status_code == 200
+
+    file_restore = client.post(f"/api/files/{fid}/restore", headers=headers)
+    folder_restore = client.post(f"/api/folders/{child['folder_id']}/restore", headers=headers)
+
+    assert file_restore.status_code == 400
+    assert folder_restore.status_code == 400
+
+
+def test_browse_validates_parent_folder(client, app, alice, bob):
+    _, _, alice_headers = alice
+    _, _, bob_headers = bob
+    bob_folder = _create_folder(client, bob_headers, "bob-docs")
+    own_folder = _create_folder(client, alice_headers, "alice-docs")
+
+    missing = client.get("/api/files/browse?parent_id=missing-folder", headers=alice_headers)
+    cross_owner = client.get(f"/api/files/browse?parent_id={bob_folder['folder_id']}", headers=alice_headers)
+    assert client.delete(f"/api/folders/{own_folder['folder_id']}", headers=alice_headers).status_code == 200
+    deleted = client.get(f"/api/files/browse?parent_id={own_folder['folder_id']}", headers=alice_headers)
+
+    assert missing.status_code == 404
+    assert cross_owner.status_code == 403
+    assert deleted.status_code == 404
+
+
+def test_renamed_file_display_name_used_by_search_preview_and_download(client, alice):
+    _, _, headers = alice
+    uploaded = _upload(client, headers, "old.txt", b"hello")
+    fid = uploaded.get_json()["file"]["file_id"]
+
+    renamed = client.patch(f"/api/files/{fid}/rename", headers=headers, json={"name": "new.txt"})
+    assert renamed.status_code == 200
+
+    search = client.get("/api/files/search?keyword=new", headers=headers)
+    assert search.status_code == 200
+    assert any(item["file_id"] == fid for item in search.get_json()["files"])
+
+    preview = client.get(f"/api/files/{fid}/preview", headers=headers)
+    assert preview.status_code == 200
+    assert preview.get_json()["filename"] == "new.txt"
+
+    download = client.get(f"/api/files/{fid}/download", headers=headers)
+    assert download.status_code == 200
+    assert "new.txt" in download.headers["Content-Disposition"]
 
 
 def test_cross_namespace_naming_with_files_and_folders(client, alice):

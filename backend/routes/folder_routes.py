@@ -45,6 +45,18 @@ def _get_mutable_folder(hbase, config, folder_id, allow_deleted=False):
     return folder, None
 
 
+def _folder_chain_active(hbase, config, parent_id, owner):
+    current_id = parent_id or "root"
+    while current_id != "root":
+        folder = hbase.get_folder(config.HBASE_TABLE_FOLDERS, current_id)
+        if not folder or folder.get("deleted") == "1":
+            return False
+        if owner and folder.get("owner") != owner:
+            return False
+        current_id = folder.get("parent_id", "root") or "root"
+    return True
+
+
 @folder_bp.route("", methods=["POST"])
 @login_required
 def create_folder():
@@ -193,6 +205,8 @@ def restore_folder(folder_id):
         return err
     if folder.get("deleted") != "1":
         return jsonify({"error": "该文件夹未在回收站中"}), 400
+    if not _folder_chain_active(hbase, config, folder.get("parent_id", "root"), folder.get("owner")):
+        return jsonify({"error": "父目录仍在回收站中，请先恢复父目录"}), 400
     hbase.restore_folder_tree(
         config.HBASE_TABLE_FOLDERS,
         config.HBASE_TABLE_FILES,

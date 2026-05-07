@@ -206,7 +206,11 @@ class HBaseService:
                     continue
                 if file_type and file_info.get("type", "").lower() != file_type.lower():
                     continue
-                if keyword and keyword.lower() not in file_info.get("filename", "").lower():
+                searchable_name = " ".join([
+                    file_info.get("display_name", ""),
+                    file_info.get("filename", ""),
+                ])
+                if keyword and keyword.lower() not in searchable_name.lower():
                     continue
                 if start_date is not None or end_date is not None:
                     try:
@@ -272,7 +276,9 @@ class HBaseService:
             row = table.row(file_id.encode())
             if not row:
                 return False
-            table.delete(file_id.encode(), columns=[b"meta:deleted", b"meta:deleted_at"])
+            table.delete(file_id.encode(), columns=[
+                b"meta:deleted", b"meta:deleted_at", b"meta:deleted_by_folder",
+            ])
             return True
 
     def update_file_meta_fields(self, table_name, file_id, fields):
@@ -421,19 +427,47 @@ class HBaseService:
         """软删除文件夹子树及其所有文件。"""
         now = str(int(time.time() * 1000))
         subtree = self.collect_folder_subtree(folders_table, files_table, folder_id)
+        deleted_folder_ids = {
+            folder["folder_id"]
+            for folder in subtree["folders"]
+            if folder.get("deleted") == "1"
+        }
+
+        def has_deleted_ancestor(item_parent_id):
+            current_id = item_parent_id or "root"
+            while current_id != "root" and current_id != folder_id:
+                if current_id in deleted_folder_ids:
+                    return True
+                parent = next(
+                    (f for f in subtree["folders"] if f.get("folder_id") == current_id),
+                    None,
+                )
+                if not parent:
+                    return False
+                current_id = parent.get("parent_id", "root") or "root"
+            return False
+
         with self._get_connection() as conn:
             folders = conn.table(folders_table)
             files = conn.table(files_table)
             for folder in subtree["folders"]:
+                if folder.get("deleted") == "1":
+                    continue
                 folders.put(folder["folder_id"].encode(), {
                     b"meta:deleted": b"1",
                     b"meta:deleted_at": now.encode(),
+                    b"meta:deleted_by_folder": folder_id.encode(),
                     b"meta:updated_at": now.encode(),
                 })
             for file_info in subtree["files"]:
+                if file_info.get("deleted") == "1":
+                    continue
+                if has_deleted_ancestor(file_info.get("parent_id", "root")):
+                    continue
                 files.put(file_info["file_id"].encode(), {
                     b"meta:deleted": b"1",
                     b"meta:deleted_at": now.encode(),
+                    b"meta:deleted_by_folder": folder_id.encode(),
                     b"meta:updated_at": now.encode(),
                 })
         return subtree
@@ -442,14 +476,27 @@ class HBaseService:
         """恢复文件夹子树及其所有文件。"""
         now = str(int(time.time() * 1000))
         subtree = self.collect_folder_subtree(folders_table, files_table, folder_id)
+        root_folder = next(
+            (folder for folder in subtree["folders"] if folder.get("folder_id") == folder_id),
+            {},
+        )
+        marker_aware_restore = root_folder.get("deleted_by_folder") == folder_id
         with self._get_connection() as conn:
             folders = conn.table(folders_table)
             files = conn.table(files_table)
             for folder in subtree["folders"]:
-                folders.delete(folder["folder_id"].encode(), columns=[b"meta:deleted", b"meta:deleted_at"])
+                if marker_aware_restore and folder.get("deleted_by_folder") != folder_id:
+                    continue
+                folders.delete(folder["folder_id"].encode(), columns=[
+                    b"meta:deleted", b"meta:deleted_at", b"meta:deleted_by_folder",
+                ])
                 folders.put(folder["folder_id"].encode(), {b"meta:updated_at": now.encode()})
             for file_info in subtree["files"]:
-                files.delete(file_info["file_id"].encode(), columns=[b"meta:deleted", b"meta:deleted_at"])
+                if marker_aware_restore and file_info.get("deleted_by_folder") != folder_id:
+                    continue
+                files.delete(file_info["file_id"].encode(), columns=[
+                    b"meta:deleted", b"meta:deleted_at", b"meta:deleted_by_folder",
+                ])
                 files.put(file_info["file_id"].encode(), {b"meta:updated_at": now.encode()})
         return subtree
 

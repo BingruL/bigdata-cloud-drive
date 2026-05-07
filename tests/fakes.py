@@ -85,7 +85,11 @@ class FakeHBaseService:
                 continue
             if file_type and info.get("type", "").lower() != file_type.lower():
                 continue
-            if keyword and keyword.lower() not in info.get("filename", "").lower():
+            searchable_name = " ".join([
+                info.get("display_name", ""),
+                info.get("filename", ""),
+            ])
+            if keyword and keyword.lower() not in searchable_name.lower():
                 continue
             if start_date is not None or end_date is not None:
                 try:
@@ -132,6 +136,7 @@ class FakeHBaseService:
             return False
         row.pop("deleted", None)
         row.pop("deleted_at", None)
+        row.pop("deleted_by_folder", None)
         return True
 
     def update_file_meta_fields(self, table_name, file_id, fields):
@@ -265,34 +270,73 @@ class FakeHBaseService:
     def soft_delete_folder_tree(self, folders_table, files_table, folder_id):
         now = str(int(time.time() * 1000))
         subtree = self.collect_folder_subtree(folders_table, files_table, folder_id)
+        deleted_folder_ids = {
+            folder["folder_id"]
+            for folder in subtree["folders"]
+            if folder.get("deleted") == "1"
+        }
+
+        def has_deleted_ancestor(item_parent_id):
+            current_id = item_parent_id or "root"
+            while current_id != "root" and current_id != folder_id:
+                if current_id in deleted_folder_ids:
+                    return True
+                parent = next(
+                    (f for f in subtree["folders"] if f.get("folder_id") == current_id),
+                    None,
+                )
+                if not parent:
+                    return False
+                current_id = parent.get("parent_id", "root") or "root"
+            return False
+
         for folder in subtree["folders"]:
+            if folder.get("deleted") == "1":
+                continue
             row = self._t(folders_table).get(folder["folder_id"])
             if row is not None:
                 row["deleted"] = "1"
                 row["deleted_at"] = now
+                row["deleted_by_folder"] = folder_id
                 row["updated_at"] = now
         for file_info in subtree["files"]:
+            if file_info.get("deleted") == "1":
+                continue
+            if has_deleted_ancestor(file_info.get("parent_id", "root")):
+                continue
             row = self._t(files_table).get(file_info["file_id"])
             if row is not None:
                 row["deleted"] = "1"
                 row["deleted_at"] = now
+                row["deleted_by_folder"] = folder_id
                 row["updated_at"] = now
         return subtree
 
     def restore_folder_tree(self, folders_table, files_table, folder_id):
         now = str(int(time.time() * 1000))
         subtree = self.collect_folder_subtree(folders_table, files_table, folder_id)
+        root_folder = next(
+            (folder for folder in subtree["folders"] if folder.get("folder_id") == folder_id),
+            {},
+        )
+        marker_aware_restore = root_folder.get("deleted_by_folder") == folder_id
         for folder in subtree["folders"]:
+            if marker_aware_restore and folder.get("deleted_by_folder") != folder_id:
+                continue
             row = self._t(folders_table).get(folder["folder_id"])
             if row is not None:
                 row.pop("deleted", None)
                 row.pop("deleted_at", None)
+                row.pop("deleted_by_folder", None)
                 row["updated_at"] = now
         for file_info in subtree["files"]:
+            if marker_aware_restore and file_info.get("deleted_by_folder") != folder_id:
+                continue
             row = self._t(files_table).get(file_info["file_id"])
             if row is not None:
                 row.pop("deleted", None)
                 row.pop("deleted_at", None)
+                row.pop("deleted_by_folder", None)
                 row["updated_at"] = now
         return subtree
 

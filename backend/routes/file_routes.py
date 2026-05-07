@@ -69,6 +69,18 @@ def _validate_parent(hbase, config, parent_id):
     return True, None
 
 
+def _folder_chain_active(hbase, config, parent_id, owner):
+    current_id = parent_id or "root"
+    while current_id != "root":
+        folder = hbase.get_folder(config.HBASE_TABLE_FOLDERS, current_id)
+        if not folder or folder.get("deleted") == "1":
+            return False
+        if owner and folder.get("owner") != owner:
+            return False
+        current_id = folder.get("parent_id", "root") or "root"
+    return True
+
+
 def _owned_active_file(hbase, config, file_id):
     meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
     if not meta or meta.get("deleted") == "1":
@@ -235,6 +247,10 @@ def browse_files():
     config = current_app.config["APP_CONFIG"]
     hbase = current_app.config["HBASE_SERVICE"]
     parent_id = request.args.get("parent_id", "root") or "root"
+    ok, err = _validate_parent(hbase, config, parent_id)
+    if not ok:
+        msg, code = err
+        return jsonify({"error": msg}), code
     folders = hbase.list_child_folders(config.HBASE_TABLE_FOLDERS, g.current_user, parent_id)
     files = []
     for f in hbase.get_all_files_raw(config.HBASE_TABLE_FILES, include_deleted=False):
@@ -330,6 +346,8 @@ def restore_file(file_id):
         return jsonify({"error": "无权操作此文件"}), 403
     if meta.get("deleted") != "1":
         return jsonify({"error": "该文件未在回收站中"}), 400
+    if not _folder_chain_active(hbase, config, meta.get("parent_id", "root"), meta.get("owner")):
+        return jsonify({"error": "父目录仍在回收站中，请先恢复父目录"}), 400
 
     hbase.restore_file(config.HBASE_TABLE_FILES, file_id)
     current_app.config["EVENT_BUS"].log(g.current_user, "restore", file_id)
@@ -463,7 +481,7 @@ def download_file(file_id):
         return send_file(
             temp_path,
             as_attachment=True,
-            download_name=meta.get("filename", "download"),
+            download_name=meta.get("display_name") or meta.get("filename", "download"),
         )
 
     except Exception as e:
@@ -647,7 +665,7 @@ def preview_file(file_id):
             current_app.config["EVENT_BUS"].log(g.current_user, "preview", file_id)
             return jsonify({
                 "type": "text",
-                "filename": meta.get("filename", ""),
+                "filename": meta.get("display_name") or meta.get("filename", ""),
                 "content": content,
                 "file_type": file_type,
             })
@@ -663,13 +681,13 @@ def preview_file(file_id):
             current_app.config["EVENT_BUS"].log(g.current_user, "preview", file_id)
             return jsonify({
                 "type": "image",
-                "filename": meta.get("filename", ""),
+                "filename": meta.get("display_name") or meta.get("filename", ""),
                 "data_url": f"data:{mime};base64,{b64}",
             })
         else:
             return jsonify({
                 "type": "unsupported",
-                "filename": meta.get("filename", ""),
+                "filename": meta.get("display_name") or meta.get("filename", ""),
                 "message": f"不支持预览 {file_type.upper()} 类型的文件",
             })
     except Exception as e:
