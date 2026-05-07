@@ -85,6 +85,7 @@ const app = createApp({
     const sortDir = ref("desc");         // "asc" | "desc"
     const selectedIds = ref(new Set());
     const selectedIdsVersion = ref(0);   // bump to trigger computed re-eval on Set mutation
+    let browseRequestSeq = 0;
 
     function toggleSort(key) {
       if (sortKey.value === key) {
@@ -176,8 +177,10 @@ const app = createApp({
         const resp = await fetch(url, { ...options, headers });
         const data = await resp.json();
         if (!resp.ok) {
+          const err = new Error(data.error || "请求失败");
+          err.status = resp.status;
           if (resp.status === 401) { doLogout(); }
-          throw new Error(data.error || "请求失败");
+          throw err;
         }
         return data;
       } catch (e) {
@@ -231,27 +234,38 @@ const app = createApp({
       token.value = "";
       username.value = "";
       userRole.value = "user";
+      resetFileBrowserState();
       localStorage.removeItem("cd_token");
       localStorage.removeItem("cd_username");
       localStorage.removeItem("cd_role");
     }
 
     // ===== Files =====
-    async function loadFiles(page = 1) {
+    async function loadFiles(page = 1, options = {}) {
+      const requestSeq = ++browseRequestSeq;
+      const requestedFolderId = currentFolderId.value || "root";
       try {
-        const params = new URLSearchParams({ parent_id: currentFolderId.value || "root" });
+        const params = new URLSearchParams({ parent_id: requestedFolderId });
         const data = await api("/files/browse?" + params.toString());
+        if (requestSeq !== browseRequestSeq || requestedFolderId !== (currentFolderId.value || "root")) {
+          return false;
+        }
         items.value = data.items || [];
         const nextBreadcrumbs = normalizeBreadcrumbs(data.breadcrumbs || []);
         breadcrumbs.value = currentFolderId.value !== "root" && nextBreadcrumbs.length <= 1
           ? breadcrumbs.value
           : nextBreadcrumbs;
         syncVisibleFiles();
+        reconcileSelectionWithVisibleFiles();
         filePagination.page = 1;
         filePagination.total = sortedItems.value.length;
         filePagination.total_pages = 1;
+        return true;
       } catch (e) {
+        if (requestSeq !== browseRequestSeq) return false;
         showToast("加载文件列表失败: " + e.message, "error");
+        if (options.rethrow) throw e;
+        return false;
       }
     }
 
@@ -265,8 +279,10 @@ const app = createApp({
       return crumbs.map(c => ({ folder_id: c.folder_id || "root", name: c.name || "全部文件" }));
     }
 
-    function openFolder(folder) {
+    async function openFolder(folder) {
       if (!isFolder(folder)) return;
+      const previousFolderId = currentFolderId.value;
+      const previousBreadcrumbs = [...breadcrumbs.value];
       currentFolderId.value = folder.folder_id;
       const existing = breadcrumbs.value.findIndex(c => c.folder_id === folder.folder_id);
       if (existing >= 0) {
@@ -275,14 +291,28 @@ const app = createApp({
         breadcrumbs.value = [...breadcrumbs.value, { folder_id: folder.folder_id, name: itemName(folder) }];
       }
       clearSelection();
-      loadFiles();
+      try {
+        await loadFiles(1, { rethrow: true });
+      } catch (e) {
+        if (e.status === 401 || !token.value) return;
+        currentFolderId.value = previousFolderId;
+        breadcrumbs.value = previousBreadcrumbs;
+      }
     }
 
-    function openBreadcrumb(crumb, idx) {
+    async function openBreadcrumb(crumb, idx) {
+      const previousFolderId = currentFolderId.value;
+      const previousBreadcrumbs = [...breadcrumbs.value];
       currentFolderId.value = crumb.folder_id || "root";
       breadcrumbs.value = breadcrumbs.value.slice(0, idx + 1);
       clearSelection();
-      loadFiles();
+      try {
+        await loadFiles(1, { rethrow: true });
+      } catch (e) {
+        if (e.status === 401 || !token.value) return;
+        currentFolderId.value = previousFolderId;
+        breadcrumbs.value = previousBreadcrumbs;
+      }
     }
 
     async function doUpload(event) {
@@ -1057,6 +1087,29 @@ const app = createApp({
       selectedIds.value.clear();
       selectedIdsVersion.value++;
     }
+    function resetFileBrowserState() {
+      currentFolderId.value = "root";
+      breadcrumbs.value = [{ folder_id: "root", name: "全部文件" }];
+      items.value = [];
+      files.value = [];
+      searchKeyword.value = "";
+      filterType.value = "";
+      filePagination.page = 1;
+      filePagination.total = 0;
+      filePagination.total_pages = 0;
+      clearSelection();
+    }
+    function reconcileSelectionWithVisibleFiles() {
+      const visibleIds = new Set(files.value.map(f => f.file_id));
+      let changed = false;
+      for (const id of [...selectedIds.value]) {
+        if (!visibleIds.has(id)) {
+          selectedIds.value.delete(id);
+          changed = true;
+        }
+      }
+      if (changed) selectedIdsVersion.value++;
+    }
     function toggleSelectAll(list) {
       const ids = list.filter(isFile).map(f => f.file_id);
       const allChosen = ids.every(id => selectedIds.value.has(id));
@@ -1068,11 +1121,13 @@ const app = createApp({
 
     watch([items, searchKeyword, filterType], () => {
       syncVisibleFiles();
+      reconcileSelectionWithVisibleFiles();
       filePagination.total = sortedItems.value.length;
     });
 
     async function doBatchDelete() {
-      const ids = [...selectedIds.value];
+      const visibleIds = new Set(files.value.map(f => f.file_id));
+      const ids = [...selectedIds.value].filter(id => visibleIds.has(id));
       if (!ids.length) return;
       if (!confirm(`将选中的 ${ids.length} 个文件移至回收站？`)) return;
       let ok = 0, fail = 0;
@@ -1087,7 +1142,8 @@ const app = createApp({
     }
 
     async function doBatchDownload() {
-      const ids = [...selectedIds.value];
+      const visibleIds = new Set(files.value.map(f => f.file_id));
+      const ids = [...selectedIds.value].filter(id => visibleIds.has(id));
       if (!ids.length) return;
       let ok = 0, fail = 0;
       for (const id of ids) {
