@@ -7,9 +7,9 @@ Spark Structured Streaming 实时统计作业
 后端 `/api/stats/realtime` 读取这些行渲染前端实时面板。
 
 写入的行：
-  realtime_action_counts   —— 最近 60s 各动作计数：{"upload": 3, "download": 8, ...}
-  realtime_active_users    —— 最近 5min 活跃用户：{"count": 4, "users": [...]}
-  realtime_hot_files       —— 最近 60s 上传/下载次数 Top 5：[{"file_id": ..., "count": N}, ...]
+  realtime_action_counts   —— 最近 5min 各动作计数：{"upload": 3, "download": 8, ...}
+  realtime_active_users    —— 最近 10min 活跃用户：{"count": 4, "users": [...]}
+  realtime_hot_files       —— 最近 5min 上传/下载次数 Top 5：[{"file_id": ..., "count": N}, ...]
   realtime_event_stream    —— 最新 30 条事件（按时间倒序）
 
 启动方式：
@@ -43,8 +43,8 @@ HBASE_HOST = os.environ.get("HBASE_HOST", "localhost")
 HBASE_PORT = int(os.environ.get("HBASE_PORT", 9090))
 STATS_TABLE = "cloud_drive_stats"
 
-ACTION_WINDOW_SEC = 60      # 动作计数 / 热门文件窗口
-ACTIVE_USER_WINDOW_SEC = 300  # 活跃用户窗口
+ACTION_WINDOW_SEC = 300       # 动作计数 / 热门文件窗口（5 分钟）
+ACTIVE_USER_WINDOW_SEC = 600  # 活跃用户窗口（10 分钟）
 EVENT_STREAM_KEEP = 30      # 事件流保留条数
 TRIGGER_INTERVAL = "2 seconds"
 
@@ -60,13 +60,13 @@ EVENT_SCHEMA = StructType([
 # ===== 跨 batch 维护的滚动状态 =====
 # 注：foreachBatch 在 driver 端执行，这些全局结构体是安全的；
 # 不要把状态放在 worker 任务里。
-_recent_events = deque(maxlen=500)   # (ts_ms, username, action, detail) 全部保留 5 分钟内
+_recent_events = deque(maxlen=2000)  # (ts_ms, username, action, detail) 保留最大窗口（10 分钟）内事件
 _state_lock = threading.Lock()       # 保护 _recent_events：foreachBatch 线程 + heartbeat 线程并发访问
 _last_log_time = [0.0]
 
 
 def _prune(now_ms):
-    """裁剪掉超出最大窗口（5 分钟）的事件"""
+    """裁剪掉超出最大窗口（ACTIVE_USER_WINDOW_SEC，当前 10 分钟）的事件"""
     cutoff = now_ms - ACTIVE_USER_WINDOW_SEC * 1000
     while _recent_events and _recent_events[0][0] < cutoff:
         _recent_events.popleft()
@@ -185,8 +185,8 @@ def main():
              .start())
 
     # 心跳线程：每 5 秒重算一次指标 + 写 realtime_heartbeat。
-    # 重算指标是为了让滑动窗口在没有新事件时也能"过期老事件"，
-    # 否则 foreachBatch 不会触发，前端会一直显示一分钟前的 download。
+    # 重算指标是为了让 5min/10min 滑动窗口在没有新事件时也能"过期老事件"，
+    # 否则 foreachBatch 不会触发，前端会一直显示几分钟前的 download。
     def _heartbeat_loop():
         while True:
             try:

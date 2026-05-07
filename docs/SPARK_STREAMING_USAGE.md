@@ -23,9 +23,9 @@
 
 | 指标 | 窗口 | HBase RowKey |
 |---|---|---|
-| 各动作计数 | 最近 60 秒 | `realtime_action_counts` |
-| 活跃用户列表 | 最近 5 分钟 | `realtime_active_users` |
-| 热门文件 Top 5 | 最近 60 秒 | `realtime_hot_files` |
+| 各动作计数 | 最近 5 分钟 | `realtime_action_counts` |
+| 活跃用户列表 | 最近 10 分钟 | `realtime_active_users` |
+| 热门文件 Top 5 | 最近 5 分钟 | `realtime_hot_files` |
 | 事件流 | 最新 30 条 | `realtime_event_stream` |
 
 ---
@@ -151,7 +151,7 @@ docker exec -it cloud-drive-kafka kafka-console-consumer.sh \
 
 - **Spark Structured Streaming 而非 DStream**：使用 DataFrame API + `readStream/writeStream`，是 Spark 2.0+ 主推的流处理 API
 - **micro-batch 模式**：`trigger(processingTime="2 seconds")` 每 2 秒一次微批，平衡延迟与吞吐
-- **driver-side 状态**：`foreachBatch` 内维护 `deque` 滚动事件缓冲，避免使用 stateful streaming 的复杂 watermark/state store。代价是 driver 重启会丢失最近 5 分钟数据，对实时面板可接受
+- **driver-side 状态**：`foreachBatch` 内维护 `deque` 滚动事件缓冲，避免使用 stateful streaming 的复杂 watermark/state store。代价是 driver 重启会丢失最近 10 分钟数据，对实时面板可接受
 - **写 HBase 用 batch put**：`table.batch()` 批量提交 4 个 rowkey，单次连接 4 次 put，开销小
 - **读写分离的 Lambda 架构**：speed layer（本作业）只更新 `realtime_*` 行；batch layer（`file_stats.py`）只更新非 `realtime_` 行，互不干扰
 - **at-least-once**：`startingOffsets=latest` + checkpoint，重启后从断点继续。重复落库由"覆盖式 put"幂等

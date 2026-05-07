@@ -535,7 +535,7 @@
 
             <div class="realtime-grid">
               <div class="rt-card rt-counter">
-                <div class="rt-label">最近 60 秒 · 总动作</div>
+                <div class="rt-label">最近 5 分钟 · 总动作</div>
                 <div class="rt-big">{{ realtimeTotalActions() }}</div>
                 <div class="rt-breakdown">
                   <span v-for="(v,k) in realtimeData.action_counts" :key="k">
@@ -546,7 +546,7 @@
               </div>
 
               <div class="rt-card rt-counter">
-                <div class="rt-label">最近 5 分钟 · 活跃用户</div>
+                <div class="rt-label">最近 10 分钟 · 活跃用户</div>
                 <div class="rt-big">{{ realtimeData.active_users.count || 0 }}</div>
                 <div class="rt-breakdown">
                   <span v-for="u in realtimeData.active_users.users" :key="u">{{ u }}</span>
@@ -555,7 +555,7 @@
               </div>
 
               <div class="rt-card rt-hot">
-                <div class="rt-label">最近 60 秒 · 热门文件</div>
+                <div class="rt-label">最近 5 分钟 · 热门文件</div>
                 <ol v-if="realtimeData.hot_files.length" class="rt-hotlist">
                   <li v-for="f in realtimeData.hot_files" :key="f.file_id">
                     <code>{{ (f.file_id || '').slice(0, 10) }}…</code>

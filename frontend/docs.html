@@ -558,7 +558,7 @@ footer a:hover { color: var(--fg); }
 
       <h3>实时面板（顶部）</h3>
       <ul>
-        <li>页面顶部的实时区按 <strong>2 秒</strong> 一次轮询 <code>/api/stats/realtime</code>，展示最近 5 分钟内的动作计数、活跃用户、热门文件与事件流；</li>
+        <li>页面顶部的实时区按 <strong>2 秒</strong> 一次轮询 <code>/api/stats/realtime</code>，展示动作计数 / 热门文件（5 分钟窗口）、活跃用户（10 分钟窗口）以及最新 30 条事件流；</li>
         <li>右上角的状态指示灯：绿色「在线」表示 Spark Streaming 作业正在消费 Kafka，灰色「离线」表示当前未启用 Kafka / Streaming（看板其它部分仍可正常使用）；</li>
         <li>实时数据来自 Kafka topic <code>cloud_drive_events</code>，由 <code>spark_jobs/streaming_stats.py</code> 在 <code>foreachBatch</code> 中维护滚动窗口并写回 <code>cloud_drive_stats</code>。</li>
       </ul>

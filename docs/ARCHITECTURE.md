@@ -68,7 +68,7 @@
 
 | 作业 | 触发 | 输出 |
 |---|---|---|
-| `spark_jobs/streaming_stats.py` | Structured Streaming，2 秒微批 | 60 秒动作计数、5 分钟活跃用户、热门文件、最新 30 条事件流 |
+| `spark_jobs/streaming_stats.py` | Structured Streaming，2 秒微批 | 5 分钟动作计数、10 分钟活跃用户、热门文件、最新 30 条事件流 |
 
 特点：**增量、低延迟（2-4 秒）、近似精确**。
 
@@ -159,7 +159,7 @@
 > "本项目以 Hadoop 生态为基础，落地了一套 Lambda 架构的智能云盘。
 > **存储层**用 HDFS 存文件、HBase 存元数据，并刻意演示了双表反向索引、复合 RowKey、稀疏列三种典型 HBase 建模手法。
 > **批处理层**用 Spark 跑统计与推荐、用 Hadoop Streaming MR 构建标签倒排索引，并把同一份倒排索引逻辑用 Spark 重写一遍，便于对比 MR 和 Spark 两种范式。
-> **速度层**用 Spark Structured Streaming 订阅 Kafka 操作事件流，2 秒微批输出 60 秒/5 分钟滑动窗口指标，前端实时面板每 2 秒刷新。
+> **速度层**用 Spark Structured Streaming 订阅 Kafka 操作事件流，2 秒微批输出 5 分钟/10 分钟滑动窗口指标，前端实时面板每 2 秒刷新。
 > **服务层**用 Flask + Vue 3 提供 RESTful API 与可视化看板，并通过 EventBus 把所有路由埋点解耦到 Kafka，配合优雅降级保证主路径永不阻塞。
 > 此外提供了 Docker Compose 一键部署、压测脚本、集成测试套件来佐证工程化质量。"
 
