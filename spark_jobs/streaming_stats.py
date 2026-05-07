@@ -61,6 +61,7 @@ EVENT_SCHEMA = StructType([
 # 注：foreachBatch 在 driver 端执行，这些全局结构体是安全的；
 # 不要把状态放在 worker 任务里。
 _recent_events = deque(maxlen=500)   # (ts_ms, username, action, detail) 全部保留 5 分钟内
+_state_lock = threading.Lock()       # 保护 _recent_events：foreachBatch 线程 + heartbeat 线程并发访问
 _last_log_time = [0.0]
 
 
@@ -88,6 +89,39 @@ def _save_stats_to_hbase(rows):
         conn.close()
 
 
+def _compute_and_write_metrics(now_ms, extra_rows=None):
+    """基于当前 _recent_events 重算 4 个实时指标并写 HBase。
+    foreachBatch 和 heartbeat 都调用它，保证空闲时窗口也会持续滑动
+    （否则 60 秒前的旧 download 会一直停在面板上不过期）。
+    """
+    with _state_lock:
+        _prune(now_ms)
+        snapshot = list(_recent_events)
+
+    action_cutoff = now_ms - ACTION_WINDOW_SEC * 1000
+    action_window = [e for e in snapshot if e[0] >= action_cutoff]
+    action_counts = Counter(e[2] for e in action_window if e[2])
+    active_users = sorted({e[1] for e in snapshot if e[1]})
+    hot_actions = {"upload", "download", "preview"}
+    file_counter = Counter(e[3] for e in action_window if e[2] in hot_actions and e[3])
+    hot_files = [{"file_id": fid, "count": c} for fid, c in file_counter.most_common(5)]
+    event_stream = [
+        {"timestamp": e[0], "username": e[1], "action": e[2], "detail": e[3]}
+        for e in snapshot[-EVENT_STREAM_KEEP:][::-1]
+    ]
+
+    rows = [
+        ("realtime_action_counts", dict(action_counts)),
+        ("realtime_active_users", {"count": len(active_users), "users": active_users}),
+        ("realtime_hot_files", hot_files),
+        ("realtime_event_stream", event_stream),
+    ]
+    if extra_rows:
+        rows.extend(extra_rows)
+    _save_stats_to_hbase(rows)
+    return len(action_window), len(active_users), len(hot_files)
+
+
 def write_batch_to_hbase(batch_df, batch_id):
     """每个微批触发一次：合并新事件到滚动状态，重算指标，写 HBase"""
     if batch_df.rdd.isEmpty():
@@ -97,38 +131,13 @@ def write_batch_to_hbase(batch_df, batch_id):
         new_events = batch_df.collect()
 
     now_ms = int(time.time() * 1000)
-    for r in new_events:
-        ts = r["timestamp"] or now_ms
-        _recent_events.append((ts, r["username"] or "", r["action"] or "", r["detail"] or ""))
-    _prune(now_ms)
+    with _state_lock:
+        for r in new_events:
+            ts = r["timestamp"] or now_ms
+            _recent_events.append((ts, r["username"] or "", r["action"] or "", r["detail"] or ""))
 
-    # ===== 指标 1：最近 60s 动作计数 =====
-    cutoff_60 = now_ms - ACTION_WINDOW_SEC * 1000
-    last60 = [e for e in _recent_events if e[0] >= cutoff_60]
-    action_counts = Counter(e[2] for e in last60 if e[2])
-
-    # ===== 指标 2：最近 5min 活跃用户 =====
-    active_users = sorted({e[1] for e in _recent_events if e[1]})
-
-    # ===== 指标 3：最近 60s 热门文件（upload / download / preview 类动作） =====
-    hot_actions = {"upload", "download", "preview"}
-    file_counter = Counter(e[3] for e in last60 if e[2] in hot_actions and e[3])
-    hot_files = [{"file_id": fid, "count": c} for fid, c in file_counter.most_common(5)]
-
-    # ===== 指标 4：最近 30 条事件流（按时间倒序） =====
-    event_stream = [
-        {"timestamp": e[0], "username": e[1], "action": e[2], "detail": e[3]}
-        for e in list(_recent_events)[-EVENT_STREAM_KEEP:][::-1]
-    ]
-
-    rows = [
-        ("realtime_action_counts", dict(action_counts)),
-        ("realtime_active_users", {"count": len(active_users), "users": active_users}),
-        ("realtime_hot_files", hot_files),
-        ("realtime_event_stream", event_stream),
-    ]
     try:
-        _save_stats_to_hbase(rows)
+        action_n, active_n, hot_n = _compute_and_write_metrics(now_ms)
     except Exception as e:
         print(f"[batch {batch_id}] HBase 写入失败: {e}", file=sys.stderr)
         return
@@ -138,8 +147,8 @@ def write_batch_to_hbase(batch_df, batch_id):
     if now - _last_log_time[0] > 10:
         _last_log_time[0] = now
         print(f"[batch {batch_id}] 新事件={len(new_events)} "
-              f"窗口内事件={len(last60)} 活跃用户={len(active_users)} "
-              f"热门文件={len(hot_files)}")
+              f"动作窗口内={action_n} 活跃用户={active_n} "
+              f"热门文件={hot_n}")
 
 
 def main():
@@ -175,11 +184,17 @@ def main():
              .option("checkpointLocation", "/tmp/cloud-drive-streaming-ckpt")
              .start())
 
-    # 心跳线程：每 5 秒写一次 realtime_heartbeat，保证空闲时后端仍能识别 Streaming 在线
+    # 心跳线程：每 5 秒重算一次指标 + 写 realtime_heartbeat。
+    # 重算指标是为了让滑动窗口在没有新事件时也能"过期老事件"，
+    # 否则 foreachBatch 不会触发，前端会一直显示一分钟前的 download。
     def _heartbeat_loop():
         while True:
             try:
-                _save_stats_to_hbase([("realtime_heartbeat", {"ts": int(time.time() * 1000)})])
+                now_ms = int(time.time() * 1000)
+                _compute_and_write_metrics(
+                    now_ms,
+                    extra_rows=[("realtime_heartbeat", {"ts": now_ms})],
+                )
             except Exception as e:
                 print(f"[heartbeat] 写入失败: {e}", file=sys.stderr)
             time.sleep(5)
