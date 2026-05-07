@@ -956,13 +956,13 @@ footer a:hover { color: var(--fg); }
     // Each step: { html, delay (before), type: 'type' | 'instant' }
     // For 'type', we typewriter-render the inner text characters (HTML tags still instant).
     const lines = [
-      { cls: '', type: true,  html: '<span class="prompt">$</span><span class="cmd">python run.py --seed</span>' },
+      { cls: '', type: true,  html: '<span class="prompt">$</span><span class="cmd">make start-full</span>' },
       { cls: 'dim',  type: false, html: 'Initializing BigData Cloud Drive …' },
       { cls: 'info', type: false, html: '<span class="tag">HBASE</span>connecting thrift @ localhost:9090' },
-      { cls: 'ok',   type: false, html: '✓ cloud_drive_users · files · logs · stats  (4/4 ready)' },
+      { cls: 'ok',   type: false, html: '✓ users · files · folders · public_links · logs · stats · groups · members · user_groups  (9/9 ready)' },
       { cls: 'info', type: false, html: '<span class="tag">HDFS</span>checking namenode @ localhost:9870' },
       { cls: 'ok',   type: false, html: '✓ /cloud-drive/files  namespace ok' },
-      { cls: 'info', type: false, html: '<span class="tag">SEED</span>loading demo dataset …' },
+      { cls: 'info', type: false, html: '<span class="tag">KAFKA</span>topic cloud_drive_events ready · consumer + streaming online' },
       { cls: 'ok',   type: false, html: '✓ 5 users · 23 files · 142 log entries' },
       { cls: 'arrow',type: false, html: '➜ serving on http://localhost:5000' },
       { cls: '',     type: false, html: '<span class="prompt">$</span>' }

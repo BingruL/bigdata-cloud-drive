@@ -386,9 +386,9 @@ footer a:hover { color: var(--fg); }
   <main class="content">
 
     <div class="doc-hero">
-      <div class="kicker">USER GUIDE · v1.0</div>
+      <div class="kicker">USER GUIDE · v1.1</div>
       <h1>智能云盘 用户使用文档</h1>
-      <p>本文档面向首次使用智能云盘系统的用户，介绍从登录、上传、检索，到 AI 摘要、推荐与看板的完整使用流程。所有功能均可在浏览器中直接使用，无需额外客户端。</p>
+      <p>本文档面向首次使用智能云盘系统的用户，介绍从登录、目录管理、公开链接、PDF 在线预览、AI 摘要到推荐与看板的完整使用流程。所有功能均可在浏览器中直接使用，无需额外客户端。</p>
     </div>
 
     <section class="doc-section" id="start">
@@ -413,7 +413,7 @@ footer a:hover { color: var(--fg); }
       </div>
       <div class="callout">
         <div class="ic"><i data-lucide="info"></i></div>
-        <div>若系统首次启动，请确认 HBase Thrift (9090) 与 HDFS NameNode (9870) 服务已运行，并通过 <code>python run.py --seed</code> 初始化测试数据。</div>
+        <div>首次启动建议先 <code>python run.py --seed</code> 初始化 9 张 HBase 表 + HDFS 目录 + 测试数据；之后日常使用 <code>make start-full</code> 一键拉起 HDFS / HBase / Kafka / Flask / log consumer / Spark Streaming 完整链路。</div>
       </div>
     </section>
 
@@ -446,28 +446,35 @@ footer a:hover { color: var(--fg); }
       <p class="lead">「我的文件」是使用频率最高的模块，支持目录浏览、上传、下载、预览、重命名、移动、删除等完整 CRUD 能力。</p>
       <h3>目录与整理</h3>
       <ul>
-        <li>点击「新建文件夹」可在当前目录创建子目录，面包屑可快速返回上级；</li>
-        <li>文件和文件夹都支持重命名、移动到根目录或指定目标文件夹；</li>
-        <li>同一目录下出现重名时，系统会自动生成可用名称，避免覆盖已有内容。</li>
+        <li>点击「新建文件夹」可在当前目录创建子目录，顶部面包屑可快速返回上级；</li>
+        <li>文件和文件夹都支持<strong>重命名</strong>、<strong>移动</strong>，移动时弹出层级缩进的目录树供选择，移动文件夹时它自身和所有子目录会自动置灰；</li>
+        <li>同一目录下出现重名时（包括文件名 vs 文件夹名），系统会自动追加 <code>(1)</code>、<code>(2)</code> 等后缀，避免覆盖已有内容；</li>
+        <li>重命名时若新名字带有不同的扩展名，文件类型也会同步更新，预览和图标会按新类型解读。</li>
       </ul>
       <h3>上传文件</h3>
       <ul>
         <li>点击页面右上角「上传」按钮，可一次选择多个文件；</li>
-        <li>或直接将文件拖入文件列表区域，松开即开始上传；</li>
-        <li>上传过程会显示进度条，成功后自动刷新列表。</li>
+        <li>多文件上传会按 <strong>i/n + 当前文件名</strong> 显示真实进度条，全部完成后自动刷新列表；</li>
+        <li>上传始终落在<strong>当前所在目录</strong>，所以新建子目录后切到目录内再上传即可入住该子目录。</li>
       </ul>
       <h3>下载与预览</h3>
       <ul>
         <li><strong>下载</strong>：点击文件行的下载图标，浏览器会直接保存文件；</li>
-        <li><strong>预览</strong>：文本、图片、Markdown 和 PDF 支持在线预览，无需下载；</li>
-        <li><strong>详情</strong>：点击文件名可查看文件大小、MIME 类型、上传时间、下载次数等元信息。</li>
+        <li><strong>预览</strong>：文本 / Markdown / 图片在弹窗内显示；PDF 通过签发 5 分钟有效的预览 Token 加载到内嵌 iframe，可直接翻页阅读；</li>
+        <li>预览成功会写入操作日志，并出现在<strong>最近访问</strong>列表中。</li>
       </ul>
       <h3>公开链接</h3>
-      <p>文件主可点击「公开链接」生成对外下载页，支持设置过期天数和可选提取码；链接可复制给未登录用户下载，也可在弹窗中随时撤销。</p>
+      <p>文件主可点击「公开链接」生成对外下载页 <code>/s/&lt;token&gt;</code>，支持设置过期天数（1–365）和可选提取码；弹窗内可一键复制链接、查看下载次数、随时撤销。撤销后复制按钮会自动禁用，过期/撤销/文件已被删除的链接打开会显示「分享不可用」提示。</p>
       <h3>搜索与筛选</h3>
-      <p>顶部搜索框支持按文件名模糊匹配，筛选下拉可按类型（文档、图片、视频等）过滤，结果实时更新。</p>
+      <p>顶部搜索框输入关键词后回车（或点放大镜），系统会切到 <strong>全站搜索模式</strong>——跨越所有目录调用 <code>/api/files/search</code>，结果支持类型筛选；点击「返回浏览」或清空搜索框即可回到当前目录视图。</p>
+      <h3>批量操作</h3>
+      <p>勾选文件复选框后顶部出现批量工具条，可一次<strong>批量下载</strong>、<strong>批量移动</strong>（同样弹出目录树选择目标）和<strong>批量移至回收站</strong>。</p>
       <h3>私有 / 共享标识</h3>
       <p>每行文件名旁会显示一枚状态徽标：<strong>私有</strong> 表示仅你本人可见；<strong>共享</strong> 表示已分享到一个或多个群组，组内成员可下载与预览。文件默认创建为私有，需要手动通过「分享到群组」操作改变可见范围，详见 <a href="#groups">第 7 节 群组与共享</a>。</p>
+      <div class="callout">
+        <div class="ic"><i data-lucide="keyboard"></i></div>
+        <div>所有弹窗均支持按 <code>ESC</code> 关闭最上层窗口。</div>
+      </div>
     </section>
 
     <section class="doc-section" id="batch">
@@ -476,7 +483,7 @@ footer a:hover { color: var(--fg); }
       <h3>批量操作</h3>
       <ul>
         <li>勾选文件前的复选框，或通过表头复选框一次性选择当前页所有文件；</li>
-        <li>选中后顶部会出现批量工具条，可批量<strong>下载</strong>或<strong>删除</strong>；回收站页面下还提供批量<strong>恢复</strong>与批量<strong>彻底删除</strong>；</li>
+        <li>选中后顶部会出现批量工具条，可批量<strong>下载</strong>、<strong>移动</strong>（弹出目录树选择目标）或<strong>移至回收站</strong>；回收站页面下还提供批量<strong>恢复</strong>与批量<strong>彻底删除</strong>；</li>
         <li>批量删除的文件会先进入回收站，30 天内可恢复。</li>
       </ul>
       <h3>列排序</h3>
@@ -552,9 +559,10 @@ footer a:hover { color: var(--fg); }
       <p class="lead">删除不会立即清除 HDFS 数据，所有删除均先进入回收站并保留可恢复窗口。</p>
       <h3>回收站</h3>
       <ul>
-        <li><strong>恢复</strong>：选择文件或文件夹点击「恢复」，内容回到原目录并恢复元数据；</li>
-        <li><strong>彻底删除</strong>：从 HDFS 与 HBase 同时移除，不可恢复；文件夹会递归清理子项；</li>
-        <li><strong>清空回收站</strong>：管理员可一键清空所有已删除内容。</li>
+        <li>页面分为<strong>文件夹</strong>和<strong>文件</strong>两节，文件夹列表只展示<strong>顶层删除项</strong>（被父级连带删除的子文件夹/子文件不会重复出现，避免「先恢复父级」的报错）；</li>
+        <li><strong>恢复</strong>：文件直接还原到原目录；文件夹递归还原它内部所有未独立删除的子项，保留之前已单独删除过的子项不动；</li>
+        <li><strong>彻底删除</strong>：从 HDFS 与 HBase 同时移除，不可恢复；文件夹会递归清理子目录与子文件；</li>
+        <li>删除文件夹前页面会提示子项数量与体积，避免误删大目录。</li>
       </ul>
       <h3>存储配额</h3>
       <p>侧栏底部的容量条显示当前用户已用空间与配额上限。默认配额为普通用户 <code>10 GB</code>、管理员 <code>200 GB</code>，可通过后端环境变量覆盖。达到 80% 时容量条变为警示状态；超过配额时上传会被拒绝。</p>
