@@ -18,7 +18,7 @@ def _validate_parent(hbase, config, parent_id):
     parent = hbase.get_folder(config.HBASE_TABLE_FOLDERS, parent_id)
     if not parent or parent.get("deleted") == "1":
         return False, ("目标目录不存在", 404)
-    if g.current_role != "admin" and parent.get("owner") != g.current_user:
+    if parent.get("owner") != g.current_user:
         return False, ("无权访问目标目录", 403)
     return True, None
 
@@ -29,8 +29,15 @@ def create_folder():
     config = current_app.config["APP_CONFIG"]
     hbase = current_app.config["HBASE_SERVICE"]
     body = request.get_json(silent=True) or {}
-    name = (body.get("name") or "").strip()
-    parent_id = (body.get("parent_id") or "root").strip() or "root"
+    raw_name = body.get("name")
+    if raw_name is not None and not isinstance(raw_name, str):
+        return jsonify({"error": "文件夹名称必须为字符串"}), 400
+    raw_parent_id = body.get("parent_id", "root")
+    if raw_parent_id is not None and not isinstance(raw_parent_id, str):
+        return jsonify({"error": "父目录ID必须为字符串"}), 400
+
+    name = (raw_name or "").strip()
+    parent_id = (raw_parent_id or "root").strip() or "root"
     if not name:
         return jsonify({"error": "文件夹名称不能为空"}), 400
     ok, err = _validate_parent(hbase, config, parent_id)

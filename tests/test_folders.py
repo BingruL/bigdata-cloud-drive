@@ -65,3 +65,47 @@ def test_create_folder_auto_renames_conflict(client, alice):
     rv = client.post("/api/folders", headers=headers, json={"name": "资料", "parent_id": "root"})
     assert rv.status_code == 201
     assert rv.get_json()["name"] == "资料 (1)"
+
+
+def test_create_folder_rejects_cross_owner_parent(client, app, alice, bob):
+    config = app.config["APP_CONFIG"]
+    hbase = app.config["HBASE_SERVICE"]
+    hbase.create_folder(config.HBASE_TABLE_FOLDERS, "bob-parent", {
+        "name": "bob-parent",
+        "owner": "bob",
+        "parent_id": "root",
+    })
+
+    _, _, headers = alice
+    rv = client.post("/api/folders", headers=headers, json={"name": "child", "parent_id": "bob-parent"})
+
+    assert rv.status_code == 403
+
+
+def test_admin_create_folder_rejects_cross_owner_parent(client, app, admin, bob):
+    config = app.config["APP_CONFIG"]
+    hbase = app.config["HBASE_SERVICE"]
+    hbase.create_folder(config.HBASE_TABLE_FOLDERS, "bob-parent", {
+        "name": "bob-parent",
+        "owner": "bob",
+        "parent_id": "root",
+    })
+
+    _, _, headers = admin
+    rv = client.post("/api/folders", headers=headers, json={"name": "child", "parent_id": "bob-parent"})
+
+    assert rv.status_code == 403
+
+
+def test_create_folder_rejects_non_string_name(client, alice):
+    _, _, headers = alice
+    rv = client.post("/api/folders", headers=headers, json={"name": ["docs"], "parent_id": "root"})
+
+    assert rv.status_code == 400
+
+
+def test_create_folder_rejects_non_string_parent_id(client, alice):
+    _, _, headers = alice
+    rv = client.post("/api/folders", headers=headers, json={"name": "docs", "parent_id": ["root"]})
+
+    assert rv.status_code == 400
