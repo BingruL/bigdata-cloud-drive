@@ -24,6 +24,12 @@ const app = createApp({
 
     // ===== File State =====
     const files = ref([]);
+    const currentFolderId = ref("root");
+    const breadcrumbs = ref([{ folder_id: "root", name: "全部文件" }]);
+    const items = ref([]);
+    const moveModal = ref(null);
+    const renameModal = ref(null);
+    const newFolderModal = ref(null);
     const filePagination = reactive({ page: 1, total: 0, total_pages: 0 });
     const searchKeyword = ref("");
     const filterType = ref("");
@@ -89,12 +95,46 @@ const app = createApp({
       }
     }
 
-    const sortedFiles = computed(() => {
-      const list = [...files.value];
+    function isFolder(item) {
+      return item && (item.item_type === "folder" || (!!item.folder_id && !item.file_id));
+    }
+
+    function isFile(item) {
+      return item && !isFolder(item);
+    }
+
+    function itemId(item) {
+      return isFolder(item) ? item.folder_id : item.file_id;
+    }
+
+    function itemName(item) {
+      if (!item) return "";
+      return isFolder(item) ? (item.name || "") : (item.display_name || item.filename || "");
+    }
+
+    function visibleBrowseItems() {
+      const keyword = (searchKeyword.value || "").trim().toLowerCase();
+      const type = (filterType.value || "").trim().toLowerCase();
+      return (items.value || []).filter(item => {
+        const name = itemName(item).toLowerCase();
+        const matchesKeyword = !keyword || name.includes(keyword);
+        const matchesType = !type || (isFile(item) && (item.type || "").toLowerCase() === type);
+        return matchesKeyword && matchesType;
+      });
+    }
+
+    function syncVisibleFiles() {
+      files.value = visibleBrowseItems().filter(isFile);
+    }
+
+    const sortedItems = computed(() => {
+      const list = visibleBrowseItems();
       const key = sortKey.value;
       const dir = sortDir.value === "asc" ? 1 : -1;
       list.sort((a, b) => {
-        let va = a[key], vb = b[key];
+        if (isFolder(a) !== isFolder(b)) return isFolder(a) ? -1 : 1;
+        let va = key === "filename" ? itemName(a) : a[key];
+        let vb = key === "filename" ? itemName(b) : b[key];
         if (key === "size" || key === "downloads" || key === "created_at") {
           va = parseInt(va || 0); vb = parseInt(vb || 0);
         } else {
@@ -107,6 +147,8 @@ const app = createApp({
       });
       return list;
     });
+
+    const sortedFiles = computed(() => sortedItems.value.filter(isFile));
 
     // ===== Storage / Recent / Trash State =====
     const storageInfo = reactive({
@@ -197,14 +239,17 @@ const app = createApp({
     // ===== Files =====
     async function loadFiles(page = 1) {
       try {
-        const params = new URLSearchParams({ page, page_size: 20 });
-        if (searchKeyword.value) params.set("keyword", searchKeyword.value);
-        if (filterType.value) params.set("type", filterType.value);
-        const data = await api("/files/list?" + params.toString());
-        files.value = data.files || [];
-        filePagination.page = data.page;
-        filePagination.total = data.total;
-        filePagination.total_pages = data.total_pages;
+        const params = new URLSearchParams({ parent_id: currentFolderId.value || "root" });
+        const data = await api("/files/browse?" + params.toString());
+        items.value = data.items || [];
+        const nextBreadcrumbs = normalizeBreadcrumbs(data.breadcrumbs || []);
+        breadcrumbs.value = currentFolderId.value !== "root" && nextBreadcrumbs.length <= 1
+          ? breadcrumbs.value
+          : nextBreadcrumbs;
+        syncVisibleFiles();
+        filePagination.page = 1;
+        filePagination.total = sortedItems.value.length;
+        filePagination.total_pages = 1;
       } catch (e) {
         showToast("加载文件列表失败: " + e.message, "error");
       }
@@ -212,6 +257,32 @@ const app = createApp({
 
     function goPage(p) {
       if (p >= 1 && p <= filePagination.total_pages) loadFiles(p);
+    }
+
+    function normalizeBreadcrumbs(raw) {
+      const crumbs = Array.isArray(raw) && raw.length ? raw : [{ folder_id: "root", name: "全部文件" }];
+      if (crumbs[0].folder_id !== "root") crumbs.unshift({ folder_id: "root", name: "全部文件" });
+      return crumbs.map(c => ({ folder_id: c.folder_id || "root", name: c.name || "全部文件" }));
+    }
+
+    function openFolder(folder) {
+      if (!isFolder(folder)) return;
+      currentFolderId.value = folder.folder_id;
+      const existing = breadcrumbs.value.findIndex(c => c.folder_id === folder.folder_id);
+      if (existing >= 0) {
+        breadcrumbs.value = breadcrumbs.value.slice(0, existing + 1);
+      } else {
+        breadcrumbs.value = [...breadcrumbs.value, { folder_id: folder.folder_id, name: itemName(folder) }];
+      }
+      clearSelection();
+      loadFiles();
+    }
+
+    function openBreadcrumb(crumb, idx) {
+      currentFolderId.value = crumb.folder_id || "root";
+      breadcrumbs.value = breadcrumbs.value.slice(0, idx + 1);
+      clearSelection();
+      loadFiles();
     }
 
     async function doUpload(event) {
@@ -222,6 +293,7 @@ const app = createApp({
         for (const file of fileList) {
           const formData = new FormData();
           formData.append("file", file);
+          formData.append("parent_id", currentFolderId.value || "root");
           await api("/files/upload", { method: "POST", body: formData });
         }
         showToast(`${fileList.length} 个文件上传成功`, "success");
@@ -245,7 +317,7 @@ const app = createApp({
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = f.filename;
+        a.download = itemName(f) || f.filename;
         document.body.appendChild(a);
         a.click();
         a.remove();
@@ -262,9 +334,11 @@ const app = createApp({
     }
 
     async function doDelete(f) {
-      if (!confirm(`将 "${f.filename}" 移至回收站？\n可在"回收站"中恢复或彻底删除。`)) return;
+      const name = itemName(f);
+      if (!confirm(`将 "${name}" 移至回收站？\n可在"回收站"中恢复或彻底删除。`)) return;
       try {
-        await api(`/files/${f.file_id}`, { method: "DELETE" });
+        const path = isFolder(f) ? `/folders/${f.folder_id}` : `/files/${f.file_id}`;
+        await api(path, { method: "DELETE" });
         showToast("已移至回收站", "success");
         loadFiles(filePagination.page);
         loadStorage();
@@ -294,14 +368,81 @@ const app = createApp({
     // ===== File Preview =====
     async function doPreview(f) {
       previewLoading.value = true;
-      previewModal.value = { filename: f.filename, type: "loading" };
+      previewModal.value = { filename: itemName(f), type: "loading" };
       try {
         const data = await api(`/files/${f.file_id}/preview`);
         previewModal.value = data;
       } catch (e) {
-        previewModal.value = { filename: f.filename, type: "unsupported", message: "预览加载失败: " + e.message };
+        previewModal.value = { filename: itemName(f), type: "unsupported", message: "预览加载失败: " + e.message };
       } finally {
         previewLoading.value = false;
+      }
+    }
+
+    function openNewFolderModal() {
+      newFolderModal.value = { name: "" };
+    }
+
+    async function confirmCreateFolder() {
+      const name = (newFolderModal.value && newFolderModal.value.name || "").trim();
+      if (!name) { showToast("文件夹名称不能为空", "error"); return; }
+      try {
+        await api("/folders", {
+          method: "POST",
+          body: JSON.stringify({ name, parent_id: currentFolderId.value || "root" }),
+        });
+        newFolderModal.value = null;
+        showToast("文件夹已创建", "success");
+        loadFiles();
+      } catch (e) {
+        showToast("创建文件夹失败: " + e.message, "error");
+      }
+    }
+
+    function openRenameModal(item) {
+      renameModal.value = { item, name: itemName(item) };
+    }
+
+    async function confirmRename() {
+      if (!renameModal.value) return;
+      const name = (renameModal.value.name || "").trim();
+      if (!name) { showToast("名称不能为空", "error"); return; }
+      const item = renameModal.value.item;
+      const path = isFolder(item) ? `/folders/${item.folder_id}/rename` : `/files/${item.file_id}/rename`;
+      try {
+        await api(path, { method: "PATCH", body: JSON.stringify({ name }) });
+        renameModal.value = null;
+        showToast("名称已更新", "success");
+        loadFiles();
+      } catch (e) {
+        showToast("重命名失败: " + e.message, "error");
+      }
+    }
+
+    function openMoveModal(item) {
+      moveModal.value = { item, targetMode: "root", targetId: "" };
+    }
+
+    function moveTargetParentId() {
+      if (!moveModal.value) return "root";
+      if (moveModal.value.targetMode === "current") return currentFolderId.value || "root";
+      if (moveModal.value.targetMode === "custom") return (moveModal.value.targetId || "").trim() || "root";
+      return "root";
+    }
+
+    async function confirmMove() {
+      if (!moveModal.value) return;
+      const item = moveModal.value.item;
+      const parent_id = moveTargetParentId();
+      const path = isFolder(item) ? `/folders/${item.folder_id}/move` : `/files/${item.file_id}/move`;
+      try {
+        await api(path, { method: "PATCH", body: JSON.stringify({ parent_id }) });
+        moveModal.value = null;
+        showToast("已移动", "success");
+        clearSelection();
+        loadFiles();
+      } catch (e) {
+        showToast("移动失败: " + e.message, "error");
       }
     }
 
@@ -714,7 +855,7 @@ const app = createApp({
             },
             yAxis: {
               type: "category",
-              data: sorted.map(i => (i.filename || "").substring(0, 20)),
+              data: sorted.map(i => (itemName(i) || "").substring(0, 20)),
               axisLabel: { color: "#4a5568", fontSize: 11 },
               axisLine: { lineStyle: { color: "#e5e9f0" } },
             },
@@ -917,13 +1058,18 @@ const app = createApp({
       selectedIdsVersion.value++;
     }
     function toggleSelectAll(list) {
-      const ids = list.map(f => f.file_id);
+      const ids = list.filter(isFile).map(f => f.file_id);
       const allChosen = ids.every(id => selectedIds.value.has(id));
       if (allChosen) ids.forEach(id => selectedIds.value.delete(id));
       else ids.forEach(id => selectedIds.value.add(id));
       selectedIdsVersion.value++;
     }
     const selectionCount = computed(() => { selectedIdsVersion.value; return selectedIds.value.size; });
+
+    watch([items, searchKeyword, filterType], () => {
+      syncVisibleFiles();
+      filePagination.total = sortedItems.value.length;
+    });
 
     async function doBatchDelete() {
       const ids = [...selectedIds.value];
@@ -1025,7 +1171,7 @@ const app = createApp({
     }
 
     async function doPurge(f) {
-      if (!confirm(`确定彻底删除 "${f.filename}" 吗？\n此操作将从 HDFS 永久移除，无法恢复。`)) return;
+      if (!confirm(`确定彻底删除 "${itemName(f)}" 吗？\n此操作将从 HDFS 永久移除，无法恢复。`)) return;
       try {
         await api(`/files/${f.file_id}/purge`, { method: "DELETE" });
         showToast("文件已彻底删除", "success");
@@ -1138,7 +1284,8 @@ const app = createApp({
     return {
       token, username, userRole, authMode, authForm, authError, loading,
       currentPage, toast,
-      files, filePagination, searchKeyword, filterType, uploading, summaryModal,
+      files, currentFolderId, breadcrumbs, items, moveModal, renameModal, newFolderModal,
+      filePagination, searchKeyword, filterType, uploading, summaryModal,
       previewModal, previewLoading,
       fileViewMode, gridSortOptions, graphData, graphLoading, selectedGraphFile, relatedFiles,
       dashboardData,
@@ -1150,11 +1297,13 @@ const app = createApp({
       loadShared, openShareModal, toggleShareGroup, isShareGroupChecked, confirmShare,
       logs,
       storageInfo, recentFiles, trashFiles,
-      sortKey, sortDir, toggleSort, sortedFiles,
+      sortKey, sortDir, toggleSort, sortedFiles, sortedItems,
       isSelected, toggleSelect, toggleSelectAll, clearSelection, selectionCount,
       doBatchDelete, doBatchDownload, doBatchRestore, doBatchPurge,
       showToast, doLogin, doRegister, doLogout,
-      loadFiles, goPage, doUpload, doDownload, doDelete, doGenerateSummary, doPreview,
+      loadFiles, goPage, openFolder, openBreadcrumb, itemName, itemId, isFolder, isFile,
+      doUpload, doDownload, doDelete, doGenerateSummary, doPreview,
+      openNewFolderModal, confirmCreateFolder, openRenameModal, confirmRename, openMoveModal, confirmMove,
       switchFileView, loadRelatedFiles,
       loadRecommend,
       doRestore, doPurge,

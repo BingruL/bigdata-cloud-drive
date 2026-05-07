@@ -142,12 +142,26 @@
                 <option value="">全部类型</option>
                 <option v-for="t in ['pdf','txt','md','jpg','jpeg','png','gif','zip','rar','7z','doc','docx','xls','xlsx','ppt','pptx','csv','json','py','java','js','ts','html','css','mp3','mp4']" :value="t">{{ t.toUpperCase() }}</option>
               </select>
+              <button class="btn btn-secondary" @click="openNewFolderModal" v-if="fileViewMode === 'list' || fileViewMode === 'grid'">
+                <i data-lucide="folder-plus"></i> 新建文件夹
+              </button>
               <label class="btn btn-primary upload-btn">
                 <i data-lucide="upload"></i> 上传文件
                 <input type="file" @change="doUpload" style="display:none" multiple>
               </label>
             </div>
           </div>
+
+          <nav class="breadcrumb-bar" v-if="fileViewMode === 'list' || fileViewMode === 'grid'">
+            <button v-for="(crumb, idx) in breadcrumbs"
+                    :key="crumb.folder_id"
+                    class="breadcrumb-item"
+                    :class="{active: idx === breadcrumbs.length - 1}"
+                    @click="openBreadcrumb(crumb, idx)">
+              <i :data-lucide="idx === 0 ? 'home' : 'folder'"></i>
+              <span>{{ crumb.name }}</span>
+            </button>
+          </nav>
 
           <!-- 上传进度 -->
           <div v-if="uploading" class="upload-progress">
@@ -174,7 +188,7 @@
                     <th class="col-check">
                       <input type="checkbox"
                              :checked="sortedFiles.length > 0 && sortedFiles.every(f => isSelected(f.file_id))"
-                             @change="toggleSelectAll(sortedFiles)">
+                             @change="toggleSelectAll(sortedItems)">
                     </th>
                     <th @click="toggleSort('filename')" :class="{sorted: sortKey==='filename'}">
                       文件名<span class="sort-caret">{{ sortKey==='filename' ? (sortDir==='asc' ? '▴' : '▾') : '' }}</span>
@@ -196,38 +210,45 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="f in sortedFiles" :key="f.file_id" :class="{'row-selected': isSelected(f.file_id)}">
+                  <tr v-for="f in sortedItems" :key="itemId(f)" :class="{'row-selected': isFile(f) && isSelected(f.file_id), 'folder-row': isFolder(f)}">
                     <td class="col-check">
-                      <input type="checkbox" :checked="isSelected(f.file_id)" @change="toggleSelect(f.file_id)">
+                      <input v-if="isFile(f)" type="checkbox" :checked="isSelected(f.file_id)" @change="toggleSelect(f.file_id)">
                     </td>
                     <td class="filename-cell">
-                      <span class="file-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</span>
-                      <span>{{ f.filename }}</span>
-                      <span v-if="f.is_shared === '1'" class="share-pill" title="已分享到群组">
+                      <span v-if="isFolder(f)" class="file-icon folder-icon" data-type="folder"><i data-lucide="folder"></i></span>
+                      <span v-else class="file-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</span>
+                      <button v-if="isFolder(f)" class="name-link folder-name" @click="openFolder(f)">{{ itemName(f) }}</button>
+                      <span v-else>{{ itemName(f) }}</span>
+                      <span v-if="isFile(f) && f.is_shared === '1'" class="share-pill" title="已分享到群组">
                         <i data-lucide="share-2"></i> 已分享
                       </span>
-                      <span v-else class="share-pill private" title="仅自己可见">
+                      <span v-else-if="isFile(f)" class="share-pill private" title="仅自己可见">
                         <i data-lucide="lock"></i> 私有
                       </span>
                     </td>
-                    <td><span class="type-badge">{{ (f.type || '').toUpperCase() }}</span></td>
-                    <td>{{ formatSize(f.size) }}</td>
-                    <td :title="new Date(parseInt(f.created_at)).toLocaleString('zh-CN')">{{ formatTime(f.created_at) }}</td>
-                    <td>{{ f.downloads || 0 }}</td>
+                    <td><span class="type-badge">{{ isFolder(f) ? '文件夹' : (f.type || '').toUpperCase() }}</span></td>
+                    <td>{{ isFolder(f) ? '—' : formatSize(f.size) }}</td>
+                    <td :title="f.created_at ? new Date(parseInt(f.created_at)).toLocaleString('zh-CN') : ''">{{ formatTime(f.created_at) }}</td>
+                    <td>{{ isFolder(f) ? '—' : (f.downloads || 0) }}</td>
                     <td>
-                      <span v-for="tag in (f.tags || '').split(',').filter(t=>t)" class="tag-badge">{{ tag }}</span>
-                      <span v-if="!f.tags" class="text-muted">—</span>
+                      <template v-if="isFile(f)">
+                        <span v-for="tag in (f.tags || '').split(',').filter(t=>t)" class="tag-badge">{{ tag }}</span>
+                      </template>
+                      <span v-if="isFolder(f) || !f.tags" class="text-muted">—</span>
                     </td>
                     <td class="actions-cell">
-                      <button @click="doPreview(f)" class="btn-sm" title="预览"><i data-lucide="eye"></i></button>
-                      <button @click="doDownload(f)" class="btn-sm" title="下载"><i data-lucide="download"></i></button>
-                      <button @click="openShareModal(f)" class="btn-sm" title="分享到群组"><i data-lucide="share-2"></i></button>
-                      <button @click="doGenerateSummary(f)" class="btn-sm" title="AI 摘要"><i data-lucide="sparkles"></i></button>
+                      <button v-if="isFolder(f)" @click="openFolder(f)" class="btn-sm" title="打开"><i data-lucide="folder-open"></i></button>
+                      <button v-if="isFile(f)" @click="doPreview(f)" class="btn-sm" title="预览"><i data-lucide="eye"></i></button>
+                      <button v-if="isFile(f)" @click="doDownload(f)" class="btn-sm" title="下载"><i data-lucide="download"></i></button>
+                      <button v-if="isFile(f)" @click="openShareModal(f)" class="btn-sm" title="分享到群组"><i data-lucide="share-2"></i></button>
+                      <button v-if="isFile(f)" @click="doGenerateSummary(f)" class="btn-sm" title="AI 摘要"><i data-lucide="sparkles"></i></button>
+                      <button @click="openRenameModal(f)" class="btn-sm" title="重命名"><i data-lucide="pencil"></i></button>
+                      <button @click="openMoveModal(f)" class="btn-sm" title="移动"><i data-lucide="folder-input"></i></button>
                       <button @click="doDelete(f)" class="btn-sm btn-danger" title="删除"><i data-lucide="trash-2"></i></button>
                     </td>
                   </tr>
-                  <tr v-if="sortedFiles.length === 0">
-                    <td colspan="8" class="empty-state">暂无文件，点击右上角上传</td>
+                  <tr v-if="sortedItems.length === 0">
+                    <td colspan="8" class="empty-state">当前目录为空</td>
                   </tr>
                 </tbody>
               </table>
@@ -265,43 +286,49 @@
               </button>
             </div>
 
-            <div class="file-grid" v-if="sortedFiles.length">
-              <div v-for="f in sortedFiles" :key="f.file_id"
+            <div class="file-grid" v-if="sortedItems.length">
+              <div v-for="f in sortedItems" :key="itemId(f)"
                    class="file-card"
-                   :class="{'card-selected': isSelected(f.file_id)}">
-                <label class="card-check">
+                   :class="{'card-selected': isFile(f) && isSelected(f.file_id), 'folder-card': isFolder(f)}">
+                <label class="card-check" v-if="isFile(f)">
                   <input type="checkbox" :checked="isSelected(f.file_id)" @change="toggleSelect(f.file_id)">
                 </label>
-                <span v-if="f.is_shared === '1'" class="card-share-pill" title="已分享到群组">
+                <span v-if="isFile(f) && f.is_shared === '1'" class="card-share-pill" title="已分享到群组">
                   <i data-lucide="share-2"></i>
                 </span>
-                <span v-else class="card-share-pill private" title="仅自己可见">
+                <span v-else-if="isFile(f)" class="card-share-pill private" title="仅自己可见">
                   <i data-lucide="lock"></i>
                 </span>
 
-                <div class="card-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</div>
-                <div class="card-name" :title="f.filename">{{ f.filename }}</div>
+                <button v-if="isFolder(f)" class="card-icon folder-card-icon" @click="openFolder(f)" title="打开文件夹">
+                  <i data-lucide="folder"></i>
+                </button>
+                <div v-else class="card-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</div>
+                <div class="card-name" :title="itemName(f)">{{ itemName(f) }}</div>
                 <div class="card-meta">
-                  <span class="type-badge">{{ (f.type || '').toUpperCase() }}</span>
-                  <span class="card-size">{{ formatSize(f.size) }}</span>
+                  <span class="type-badge">{{ isFolder(f) ? '文件夹' : (f.type || '').toUpperCase() }}</span>
+                  <span class="card-size">{{ isFolder(f) ? '—' : formatSize(f.size) }}</span>
                 </div>
-                <div class="card-tags" v-if="f.tags">
+                <div class="card-tags" v-if="isFile(f) && f.tags">
                   <span v-for="tag in (f.tags || '').split(',').filter(t=>t).slice(0,3)" class="tag-badge">{{ tag }}</span>
                 </div>
                 <div class="card-footer">
                   <span class="card-time" :title="new Date(parseInt(f.created_at)).toLocaleString('zh-CN')">{{ formatTime(f.created_at) }}</span>
-                  <span class="card-dl" title="下载次数"><i data-lucide="download"></i> {{ f.downloads || 0 }}</span>
+                  <span v-if="isFile(f)" class="card-dl" title="下载次数"><i data-lucide="download"></i> {{ f.downloads || 0 }}</span>
                 </div>
                 <div class="card-actions">
-                  <button @click="doPreview(f)" class="btn-sm" title="预览"><i data-lucide="eye"></i></button>
-                  <button @click="doDownload(f)" class="btn-sm" title="下载"><i data-lucide="download"></i></button>
-                  <button @click="openShareModal(f)" class="btn-sm" title="分享到群组"><i data-lucide="share-2"></i></button>
-                  <button @click="doGenerateSummary(f)" class="btn-sm" title="AI 摘要"><i data-lucide="sparkles"></i></button>
+                  <button v-if="isFolder(f)" @click="openFolder(f)" class="btn-sm" title="打开"><i data-lucide="folder-open"></i></button>
+                  <button v-if="isFile(f)" @click="doPreview(f)" class="btn-sm" title="预览"><i data-lucide="eye"></i></button>
+                  <button v-if="isFile(f)" @click="doDownload(f)" class="btn-sm" title="下载"><i data-lucide="download"></i></button>
+                  <button v-if="isFile(f)" @click="openShareModal(f)" class="btn-sm" title="分享到群组"><i data-lucide="share-2"></i></button>
+                  <button v-if="isFile(f)" @click="doGenerateSummary(f)" class="btn-sm" title="AI 摘要"><i data-lucide="sparkles"></i></button>
+                  <button @click="openRenameModal(f)" class="btn-sm" title="重命名"><i data-lucide="pencil"></i></button>
+                  <button @click="openMoveModal(f)" class="btn-sm" title="移动"><i data-lucide="folder-input"></i></button>
                   <button @click="doDelete(f)" class="btn-sm btn-danger" title="删除"><i data-lucide="trash-2"></i></button>
                 </div>
               </div>
             </div>
-            <div v-else class="empty-state" style="padding:72px 24px;text-align:center">暂无文件，点击右上角上传</div>
+            <div v-else class="empty-state" style="padding:72px 24px;text-align:center">当前目录为空</div>
 
             <!-- 分页 -->
             <div v-if="filePagination.total_pages > 1" class="pagination">
@@ -365,7 +392,7 @@
                   <div v-for="rf in relatedFiles" :key="rf.file_id" class="related-file-item">
                     <span class="file-icon" :data-type="rf.type">{{ getFileIcon(rf.type || '') }}</span>
                     <div class="related-file-info">
-                      <span class="related-file-name">{{ rf.filename }}</span>
+                      <span class="related-file-name">{{ itemName(rf) }}</span>
                       <span class="related-file-meta">{{ (rf.type || '').toUpperCase() }} · {{ formatSize(rf.size) }}</span>
                     </div>
                     <span class="relation-score">{{ (rf.relation_score * 100).toFixed(0) }}%</span>
@@ -402,7 +429,7 @@
           <div v-if="summaryModal" class="modal-overlay" @click.self="summaryModal=null">
             <div class="modal-card">
               <h3>AI 文件分析</h3>
-              <p class="modal-filename">{{ summaryModal.filename }}</p>
+              <p class="modal-filename">{{ itemName(summaryModal) }}</p>
               <div class="modal-section">
                 <h4>摘要</h4>
                 <p>{{ summaryModal.summary || '暂无摘要' }}</p>
@@ -443,7 +470,7 @@
                 <tr v-for="f in recentFiles" :key="f.file_id">
                   <td class="filename-cell">
                     <span class="file-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</span>
-                    <span>{{ f.filename }}</span>
+                    <span>{{ itemName(f) }}</span>
                   </td>
                   <td><span class="type-badge">{{ (f.type || '').toUpperCase() }}</span></td>
                   <td>{{ formatSize(f.size) }}</td>
@@ -502,7 +529,7 @@
                   </td>
                   <td class="filename-cell">
                     <span class="file-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</span>
-                    <span>{{ f.filename }}</span>
+                    <span>{{ itemName(f) }}</span>
                   </td>
                   <td><span class="type-badge">{{ (f.type || '').toUpperCase() }}</span></td>
                   <td>{{ formatSize(f.size) }}</td>
@@ -647,7 +674,7 @@
             <div v-for="f in recommendFiles" :key="f.file_id" class="recommend-card">
               <div class="rec-icon" :data-type="f.type">{{ getFileIcon(f.type || '') }}</div>
               <div class="rec-info">
-                <span class="rec-name">{{ f.filename }}</span>
+                <span class="rec-name">{{ itemName(f) }}</span>
                 <span class="rec-meta">{{ (f.type || '').toUpperCase() }} · {{ formatSize(f.size) }} · 上传者: {{ f.owner }}</span>
               </div>
               <div class="rec-stats">
@@ -700,7 +727,7 @@
                 <tr v-for="f in sharedFiles" :key="f.file_id">
                   <td class="filename-cell">
                     <span class="file-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</span>
-                    <span>{{ f.filename }}</span>
+                    <span>{{ itemName(f) }}</span>
                   </td>
                   <td><span class="type-badge">{{ (f.type || '').toUpperCase() }}</span></td>
                   <td>{{ formatSize(f.size) }}</td>
@@ -809,11 +836,73 @@
       </main>
     </div>
 
+    <!-- 新建文件夹弹窗 -->
+    <div v-if="newFolderModal" class="modal-overlay" @click.self="newFolderModal=null">
+      <div class="modal-card folder-form-modal">
+        <h3>新建文件夹</h3>
+        <p class="modal-filename">当前位置：{{ breadcrumbs.length ? breadcrumbs[breadcrumbs.length - 1].name : '全部文件' }}</p>
+        <div class="modal-form-row">
+          <label>名称</label>
+          <input v-model="newFolderModal.name" type="text" maxlength="80" placeholder="输入文件夹名称" @keyup.enter="confirmCreateFolder">
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" @click="newFolderModal=null">取消</button>
+          <button class="btn btn-primary" @click="confirmCreateFolder">创建</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 重命名弹窗 -->
+    <div v-if="renameModal" class="modal-overlay" @click.self="renameModal=null">
+      <div class="modal-card folder-form-modal">
+        <h3>重命名</h3>
+        <p class="modal-filename">{{ isFolder(renameModal.item) ? '文件夹' : '文件' }} · {{ itemName(renameModal.item) }}</p>
+        <div class="modal-form-row">
+          <label>新名称</label>
+          <input v-model="renameModal.name" type="text" maxlength="160" placeholder="输入新名称" @keyup.enter="confirmRename">
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" @click="renameModal=null">取消</button>
+          <button class="btn btn-primary" @click="confirmRename">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 移动弹窗 -->
+    <div v-if="moveModal" class="modal-overlay" @click.self="moveModal=null">
+      <div class="modal-card folder-form-modal">
+        <h3>移动到</h3>
+        <p class="modal-filename">{{ isFolder(moveModal.item) ? '文件夹' : '文件' }} · {{ itemName(moveModal.item) }}</p>
+        <div class="move-choice-list">
+          <label class="move-choice">
+            <input type="radio" value="root" v-model="moveModal.targetMode">
+            <span>根目录</span>
+          </label>
+          <label class="move-choice">
+            <input type="radio" value="current" v-model="moveModal.targetMode">
+            <span>当前目录：{{ breadcrumbs.length ? breadcrumbs[breadcrumbs.length - 1].name : '全部文件' }}</span>
+          </label>
+          <label class="move-choice">
+            <input type="radio" value="custom" v-model="moveModal.targetMode">
+            <span>输入目标文件夹 ID</span>
+          </label>
+        </div>
+        <div class="modal-form-row" v-if="moveModal.targetMode === 'custom'">
+          <label>目标 ID</label>
+          <input v-model="moveModal.targetId" type="text" placeholder="folder_id，留空表示根目录" @keyup.enter="confirmMove">
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" @click="moveModal=null">取消</button>
+          <button class="btn btn-primary" @click="confirmMove">移动</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 分享文件到群组 弹窗 -->
     <div v-if="shareModal" class="modal-overlay" @click.self="shareModal=null">
       <div class="modal-card share-modal">
         <h3>分享到群组</h3>
-        <p class="modal-filename">{{ shareModal.file.filename }}</p>
+        <p class="modal-filename">{{ itemName(shareModal.file) }}</p>
         <p class="text-muted" style="font-size:13px;margin-bottom:12px">
           勾选要分享到的群组。取消所有勾选并保存即恢复为私有。
         </p>

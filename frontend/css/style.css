@@ -518,6 +518,49 @@ h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; color: var(--ink);
 .upload-btn { position: relative; cursor: pointer; }
 .upload-btn i { width: 14px; height: 14px; }
 
+.breadcrumb-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -18px 0 22px;
+  padding-bottom: 14px;
+  border-bottom: var(--hairline-soft);
+}
+.breadcrumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 5px 8px;
+  border: none;
+  background: transparent;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  transition: var(--transition);
+}
+.breadcrumb-item:not(:last-child)::after {
+  content: "/";
+  margin-left: 6px;
+  color: var(--ink-faint);
+}
+.breadcrumb-item:hover,
+.breadcrumb-item.active {
+  color: var(--vermillion);
+}
+.breadcrumb-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.breadcrumb-item i {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+}
+
 
 /* =====================================================
    UPLOAD PROGRESS
@@ -640,6 +683,28 @@ h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; color: var(--ink);
   border: var(--hairline);
   color: var(--ink);
   font-family: var(--serif); font-style: italic;
+}
+.folder-icon {
+  color: var(--ochre);
+  box-shadow: inset 3px 0 0 var(--ochre);
+}
+.folder-icon i { width: 18px; height: 18px; }
+.folder-row .filename-cell {
+  font-weight: 650;
+}
+.name-link {
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+.name-link:hover {
+  color: var(--vermillion);
+}
+.folder-name {
+  font-family: var(--sans);
 }
 
 /* Type-coloured left edge for icons */
@@ -766,6 +831,55 @@ h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; color: var(--ink);
   font-family: var(--serif); font-weight: 400;
 }
 .tags-row { display: flex; flex-wrap: wrap; }
+.folder-form-modal { max-width: 500px; }
+.modal-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 18px 0 22px;
+}
+.modal-form-row label {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.modal-form-row input {
+  padding: 11px 0;
+  border: none;
+  border-bottom: 1.5px solid var(--rule);
+  background: transparent;
+  color: var(--ink);
+  font-size: 15px;
+  outline: none;
+}
+.modal-form-row input:focus {
+  border-bottom-color: var(--vermillion);
+}
+.move-choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 16px 0;
+}
+.move-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: var(--hairline-soft);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.move-choice:hover {
+  border-color: var(--rule);
+  background: var(--paper-soft);
+}
+.move-choice input {
+  accent-color: var(--vermillion);
+}
 
 
 /* ---------- Preview Modal ---------- */
@@ -1257,6 +1371,27 @@ h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; color: var(--ink);
 }
 .file-card:hover .card-actions,
 .file-card.card-selected .card-actions { opacity: 1; }
+.folder-card {
+  border-color: var(--ochre);
+}
+.folder-card-icon {
+  border: none;
+  background: transparent;
+  color: var(--ochre);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 8px auto 10px;
+  padding: 0;
+}
+.folder-card-icon i {
+  width: 48px;
+  height: 48px;
+  stroke-width: 1.6;
+}
+.folder-card .card-actions {
+  opacity: 1;
+}
 
 
 /* =====================================================
