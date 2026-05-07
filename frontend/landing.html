@@ -675,13 +675,14 @@ footer a:hover { color: var(--fg); }
       <div>
         <div class="icon-wrap ic-white"><i data-lucide="database"></i></div>
         <h3>HBase 驱动的元数据引擎</h3>
-        <p>用户、文件、日志、统计四张表构成毫秒级检索底座，单集群可扩展至百亿行记录，RowKey 设计保证顺序扫描与热点均衡。</p>
+        <p>用户、文件、目录、公开链接、日志与统计等 9 张核心表构成检索底座，RowKey 与反向索引设计支撑权限、目录和分享查询。</p>
       </div>
       <div class="chip-row">
         <span class="chip">cloud_drive_users</span>
         <span class="chip">cloud_drive_files</span>
+        <span class="chip">cloud_drive_folders</span>
+        <span class="chip">cloud_drive_public_links</span>
         <span class="chip">cloud_drive_logs</span>
-        <span class="chip">cloud_drive_stats</span>
       </div>
     </div>
 
@@ -689,14 +690,21 @@ footer a:hover { color: var(--fg); }
       <span class="tag">HDFS</span>
       <div class="icon-wrap ic-blue"><i data-lucide="hard-drive"></i></div>
       <h3>海量文件稳如磐石</h3>
-      <p>WebHDFS 直连，三副本容灾，按用户隔离目录。</p>
+      <p>WebHDFS 直连，三副本容灾；可见目录、重命名和移动由 HBase 元数据高效维护。</p>
     </div>
 
     <div class="bento-card">
       <span class="tag">AI</span>
       <div class="icon-wrap ic-pink"><i data-lucide="sparkles"></i></div>
       <h3>一键 AI 摘要</h3>
-      <p>文档上传即读懂，自动生成摘要与标签。</p>
+      <p>文本文件上传即读懂，自动生成摘要与标签；非文本文件按文件名推断标签。</p>
+    </div>
+
+    <div class="bento-card">
+      <span class="tag">Share</span>
+      <div class="icon-wrap ic-lime"><i data-lucide="link"></i></div>
+      <h3>公开链接下载</h3>
+      <p>生成带过期时间和可选提取码的外链页面，未登录用户也能按权限下载。</p>
     </div>
 
     <div class="bento-card feature-wide">
@@ -788,7 +796,7 @@ footer a:hover { color: var(--fg); }
     <div class="compare-row">
       <div class="compare-label">智能能力</div>
       <div class="compare-old">需接入第三方插件或手动调用 ChatGPT，文件内容外传。</div>
-      <div class="compare-ours">内置 AI 摘要、自动标签，文件级 LLM 处理流水线。</div>
+      <div class="compare-ours">内置 AI 摘要、自动标签、PDF 在线预览和公开链接下载，核心体验不依赖客户端。</div>
     </div>
     <div class="compare-row">
       <div class="compare-label">智能推荐</div>

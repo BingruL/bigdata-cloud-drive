@@ -487,9 +487,9 @@ footer a:hover { color: var(--fg); }
       <h2><span class="num">05</span>AI 摘要与标签</h2>
       <p class="lead">文档上传完成后可一键调用 LLM 生成内容摘要与自动标签，帮助快速理解与检索。</p>
       <ul>
-        <li>在文件行展开操作菜单，点击 <strong>AI 摘要</strong>，系统会读取文件正文并调用 LLM 生成 3–5 句话的中文摘要；</li>
+        <li>在文件行点击 <strong>AI 摘要</strong>，文本类文件会读取正文并调用 LLM 生成 3–5 句话的中文摘要；</li>
         <li>摘要生成后会写入文件元数据，再次查看无需重复调用；</li>
-        <li><strong>自动标签</strong> 会基于文档内容产出 3–8 个主题关键词，可用于后续筛选与关系图谱。</li>
+        <li><strong>自动标签</strong> 会基于文本内容或非文本文件名产出 3–8 个主题关键词，可用于后续筛选与关系图谱。</li>
       </ul>
       <div class="callout">
         <div class="ic"><i data-lucide="sparkles"></i></div>
@@ -613,7 +613,7 @@ footer a:hover { color: var(--fg); }
       <p>请确认 HDFS NameNode 已在 9870 端口运行，并检查后端 <code>HDFS_URL</code> 环境变量配置是否正确。使用 <code>curl http://localhost:9870/webhdfs/v1/?op=LISTSTATUS</code> 可快速自检。</p>
 
       <h3>AI 摘要按钮点击后没有反应？</h3>
-      <p>说明未配置 <code>AI_API_KEY</code> 或该文件不在支持的文本类型范围内。当前 AI 功能支持 <code>txt / md / docx / pdf</code> 等文本格式。</p>
+      <p>说明未配置 <code>AI_API_KEY</code>，或当前文件不属于可直接读取正文的文本类型。正文摘要支持 <code>txt / md / csv / json / xml / html / py / java / js / log</code> 等文本文件；PDF 等非文本文件当前只按文件名生成标签，不读取正文。</p>
 
       <h3>忘记了登录密码怎么办？</h3>
       <p>普通用户请联系管理员重置；管理员密码由启动时的 <code>ADMIN_PASSWORD</code> 环境变量或默认 <code>admin123</code> 控制。</p>
