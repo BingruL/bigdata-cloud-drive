@@ -287,6 +287,14 @@ class HBaseService:
             if data:
                 table.put(file_id.encode(), data)
 
+    def create_folder(self, table_name, folder_id, meta):
+        """创建文件夹元数据。"""
+        with self._get_connection() as conn:
+            conn.table(table_name).put(folder_id.encode(), {
+                f"meta:{k}".encode(): str(v).encode() for k, v in meta.items()
+            })
+        return {"folder_id": folder_id, **meta}
+
     def list_child_folders(self, table_name, owner, parent_id, include_deleted=False, only_deleted=False):
         """列出指定父目录下的文件夹。"""
         rows = []
@@ -323,6 +331,30 @@ class HBaseService:
                 col = k.decode().split(":", 1)[1]
                 result[col] = v.decode()
             return result
+
+    def resolve_available_name(self, files_table, folders_table, owner, parent_id, desired_name,
+                               exclude_file_id=None, exclude_folder_id=None):
+        """在同一目录下避开文件和文件夹重名，生成可用名称。"""
+        base, dot, ext = desired_name.rpartition(".")
+        if not dot:
+            base, ext = desired_name, ""
+        else:
+            ext = "." + ext
+        used = set()
+        for f in self.get_all_files_raw(files_table, include_deleted=False):
+            if f.get("owner") == owner and f.get("parent_id", "root") == parent_id and f.get("file_id") != exclude_file_id:
+                used.add(f.get("display_name") or f.get("filename", ""))
+        for folder in self.list_child_folders(folders_table, owner, parent_id):
+            if folder.get("folder_id") != exclude_folder_id:
+                used.add(folder.get("name", ""))
+        if desired_name not in used:
+            return desired_name
+        n = 1
+        while True:
+            candidate = f"{base} ({n}){ext}"
+            if candidate not in used:
+                return candidate
+            n += 1
 
     # ========== 操作日志 ==========
 

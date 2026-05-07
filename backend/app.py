@@ -17,6 +17,7 @@ from .services.stats_service import StatsService
 from .services.event_bus import EventBus
 from .routes.auth_routes import auth_bp
 from .routes.file_routes import file_bp
+from .routes.folder_routes import folder_bp
 from .routes.stats_routes import stats_bp, ai_bp
 from .routes.group_routes import group_bp
 
@@ -94,6 +95,7 @@ def create_app():
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(file_bp)
+    app.register_blueprint(folder_bp)
     app.register_blueprint(stats_bp)
     app.register_blueprint(ai_bp)
     app.register_blueprint(group_bp)

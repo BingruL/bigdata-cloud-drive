@@ -176,6 +176,10 @@ class FakeHBaseService:
             result.append({"file_id": fid, **row})
         return result
 
+    def create_folder(self, table_name, folder_id, meta):
+        self._t(table_name)[folder_id] = dict(meta)
+        return {"folder_id": folder_id, **meta}
+
     def list_child_folders(self, table_name, owner, parent_id, include_deleted=False, only_deleted=False):
         rows = []
         for folder_id, row in self._t(table_name).items():
@@ -197,6 +201,29 @@ class FakeHBaseService:
             return {"folder_id": "root", "name": "全部文件", "parent_id": "", "owner": ""}
         row = self._t(table_name).get(folder_id)
         return {"folder_id": folder_id, **row} if row else None
+
+    def resolve_available_name(self, files_table, folders_table, owner, parent_id, desired_name,
+                               exclude_file_id=None, exclude_folder_id=None):
+        base, dot, ext = desired_name.rpartition(".")
+        if not dot:
+            base, ext = desired_name, ""
+        else:
+            ext = "." + ext
+        used = set()
+        for f in self.get_all_files_raw(files_table, include_deleted=False):
+            if f.get("owner") == owner and f.get("parent_id", "root") == parent_id and f.get("file_id") != exclude_file_id:
+                used.add(f.get("display_name") or f.get("filename", ""))
+        for folder in self.list_child_folders(folders_table, owner, parent_id):
+            if folder.get("folder_id") != exclude_folder_id:
+                used.add(folder.get("name", ""))
+        if desired_name not in used:
+            return desired_name
+        n = 1
+        while True:
+            candidate = f"{base} ({n}){ext}"
+            if candidate not in used:
+                return candidate
+            n += 1
 
     # ===== 日志 =====
     def add_log(self, table_name, username, action, detail=""):
