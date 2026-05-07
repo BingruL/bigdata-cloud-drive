@@ -127,15 +127,18 @@
                 <button :class="{active: fileViewMode === 'list'}" @click="switchFileView('list')" title="列表视图">
                   <i data-lucide="list"></i>
                 </button>
+                <button :class="{active: fileViewMode === 'grid'}" @click="switchFileView('grid')" title="矩阵视图">
+                  <i data-lucide="layout-grid"></i>
+                </button>
                 <button :class="{active: fileViewMode === 'graph'}" @click="switchFileView('graph')" title="关系图谱">
                   <i data-lucide="git-branch"></i>
                 </button>
               </div>
-              <div class="search-box" v-if="fileViewMode === 'list'">
+              <div class="search-box" v-if="fileViewMode === 'list' || fileViewMode === 'grid'">
                 <input v-model="searchKeyword" @keyup.enter="loadFiles" type="text" placeholder="搜索文件名...">
                 <button @click="loadFiles" class="btn-icon"><i data-lucide="search"></i></button>
               </div>
-              <select v-model="filterType" @change="loadFiles(1)" class="filter-select" v-if="fileViewMode === 'list'">
+              <select v-model="filterType" @change="loadFiles(1)" class="filter-select" v-if="fileViewMode === 'list' || fileViewMode === 'grid'">
                 <option value="">全部类型</option>
                 <option v-for="t in ['pdf','txt','md','jpg','jpeg','png','gif','zip','rar','7z','doc','docx','xls','xlsx','ppt','pptx','csv','json','py','java','js','ts','html','css','mp3','mp4']" :value="t">{{ t.toUpperCase() }}</option>
               </select>
@@ -229,6 +232,76 @@
                 </tbody>
               </table>
             </div>
+
+            <!-- 分页 -->
+            <div v-if="filePagination.total_pages > 1" class="pagination">
+              <button @click="goPage(filePagination.page - 1)" :disabled="filePagination.page <= 1">上一页</button>
+              <span>{{ filePagination.page }} / {{ filePagination.total_pages }}</span>
+              <button @click="goPage(filePagination.page + 1)" :disabled="filePagination.page >= filePagination.total_pages">下一页</button>
+            </div>
+          </template>
+
+          <!-- ===== 矩阵（网格）视图 ===== -->
+          <template v-if="fileViewMode === 'grid'">
+            <!-- 批量操作栏 -->
+            <div v-if="selectionCount > 0" class="batch-toolbar">
+              <span class="batch-count">已选 <b>{{ selectionCount }}</b> 项</span>
+              <div class="batch-actions">
+                <button @click="doBatchDownload" class="btn-sm"><i data-lucide="download"></i> {{ selectionCount > 1 ? '批量下载' : '下载' }}</button>
+                <button @click="doBatchDelete" class="btn-sm btn-danger"><i data-lucide="trash-2"></i> 移至回收站</button>
+                <button @click="clearSelection" class="btn-sm">取消</button>
+              </div>
+            </div>
+
+            <!-- 排序条 -->
+            <div class="grid-sort-bar">
+              <span class="grid-sort-label">排序</span>
+              <button v-for="opt in gridSortOptions"
+                      :key="opt.k"
+                      class="grid-sort-btn"
+                      :class="{active: sortKey===opt.k}"
+                      @click="toggleSort(opt.k)">
+                {{ opt.l }}<span class="sort-caret" v-if="sortKey===opt.k">{{ sortDir==='asc' ? '▴' : '▾' }}</span>
+              </button>
+            </div>
+
+            <div class="file-grid" v-if="sortedFiles.length">
+              <div v-for="f in sortedFiles" :key="f.file_id"
+                   class="file-card"
+                   :class="{'card-selected': isSelected(f.file_id)}">
+                <label class="card-check">
+                  <input type="checkbox" :checked="isSelected(f.file_id)" @change="toggleSelect(f.file_id)">
+                </label>
+                <span v-if="f.is_shared === '1'" class="card-share-pill" title="已分享到群组">
+                  <i data-lucide="share-2"></i>
+                </span>
+                <span v-else class="card-share-pill private" title="仅自己可见">
+                  <i data-lucide="lock"></i>
+                </span>
+
+                <div class="card-icon" :data-type="f.type">{{ getFileIcon(f.type) }}</div>
+                <div class="card-name" :title="f.filename">{{ f.filename }}</div>
+                <div class="card-meta">
+                  <span class="type-badge">{{ (f.type || '').toUpperCase() }}</span>
+                  <span class="card-size">{{ formatSize(f.size) }}</span>
+                </div>
+                <div class="card-tags" v-if="f.tags">
+                  <span v-for="tag in (f.tags || '').split(',').filter(t=>t).slice(0,3)" class="tag-badge">{{ tag }}</span>
+                </div>
+                <div class="card-footer">
+                  <span class="card-time" :title="new Date(parseInt(f.created_at)).toLocaleString('zh-CN')">{{ formatTime(f.created_at) }}</span>
+                  <span class="card-dl" title="下载次数"><i data-lucide="download"></i> {{ f.downloads || 0 }}</span>
+                </div>
+                <div class="card-actions">
+                  <button @click="doPreview(f)" class="btn-sm" title="预览"><i data-lucide="eye"></i></button>
+                  <button @click="doDownload(f)" class="btn-sm" title="下载"><i data-lucide="download"></i></button>
+                  <button @click="openShareModal(f)" class="btn-sm" title="分享到群组"><i data-lucide="share-2"></i></button>
+                  <button @click="doGenerateSummary(f)" class="btn-sm" title="AI 摘要"><i data-lucide="sparkles"></i></button>
+                  <button @click="doDelete(f)" class="btn-sm btn-danger" title="删除"><i data-lucide="trash-2"></i></button>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty-state" style="padding:72px 24px;text-align:center">暂无文件，点击右上角上传</div>
 
             <!-- 分页 -->
             <div v-if="filePagination.total_pages > 1" class="pagination">

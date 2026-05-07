@@ -31,7 +31,14 @@ const app = createApp({
     const summaryModal = ref(null);
     const previewModal = ref(null);
     const previewLoading = ref(false);
-    const fileViewMode = ref("list"); // "list" 或 "graph"
+    const fileViewMode = ref("list"); // "list" / "grid" / "graph"
+    const gridSortOptions = [
+      { k: "filename",   l: "文件名" },
+      { k: "type",       l: "类型" },
+      { k: "size",       l: "大小" },
+      { k: "created_at", l: "上传时间" },
+      { k: "downloads",  l: "下载次数" },
+    ];
     const graphData = ref(null);
     const graphLoading = ref(false);
     const selectedGraphFile = ref(null);
@@ -1133,7 +1140,7 @@ const app = createApp({
       currentPage, toast,
       files, filePagination, searchKeyword, filterType, uploading, summaryModal,
       previewModal, previewLoading,
-      fileViewMode, graphData, graphLoading, selectedGraphFile, relatedFiles,
+      fileViewMode, gridSortOptions, graphData, graphLoading, selectedGraphFile, relatedFiles,
       dashboardData,
       realtimeData, realtimeTotalActions,
       recTab, recommendFiles, recommendScope, recommendScopeLabel,
