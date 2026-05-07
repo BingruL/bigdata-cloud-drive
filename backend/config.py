@@ -32,6 +32,9 @@ class Config:
     HBASE_TABLE_GROUPS = "cloud_drive_groups"
     HBASE_TABLE_GROUP_MEMBERS = "cloud_drive_group_members"
     HBASE_TABLE_USER_GROUPS = "cloud_drive_user_groups"
+    HBASE_TABLE_FOLDERS = "cloud_drive_folders"
+    HBASE_TABLE_PUBLIC_LINKS = "cloud_drive_public_links"
+    PDF_PREVIEW_TOKEN_TTL_SECONDS = int(os.environ.get("PDF_PREVIEW_TOKEN_TTL_SECONDS", 300))
 
     # 文件上传
     MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500MB

@@ -81,6 +81,8 @@ def create_app():
             config.HBASE_TABLE_GROUPS: {"info": dict()},
             config.HBASE_TABLE_GROUP_MEMBERS: {"info": dict()},
             config.HBASE_TABLE_USER_GROUPS: {"info": dict()},
+            config.HBASE_TABLE_FOLDERS: {"meta": dict()},
+            config.HBASE_TABLE_PUBLIC_LINKS: {"meta": dict()},
         }
         hbase_service.init_tables(table_config)
         hdfs_service.init_directories()

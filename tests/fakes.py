@@ -176,6 +176,28 @@ class FakeHBaseService:
             result.append({"file_id": fid, **row})
         return result
 
+    def list_child_folders(self, table_name, owner, parent_id, include_deleted=False, only_deleted=False):
+        rows = []
+        for folder_id, row in self._t(table_name).items():
+            if row.get("owner") != owner:
+                continue
+            if row.get("parent_id", "root") != parent_id:
+                continue
+            deleted = row.get("deleted") == "1"
+            if only_deleted and not deleted:
+                continue
+            if not include_deleted and not only_deleted and deleted:
+                continue
+            rows.append({"folder_id": folder_id, **row, "item_type": "folder"})
+        rows.sort(key=lambda r: r.get("name", ""))
+        return rows
+
+    def get_folder(self, table_name, folder_id):
+        if folder_id == "root":
+            return {"folder_id": "root", "name": "全部文件", "parent_id": "", "owner": ""}
+        row = self._t(table_name).get(folder_id)
+        return {"folder_id": folder_id, **row} if row else None
+
     # ===== 日志 =====
     def add_log(self, table_name, username, action, detail=""):
         t = self._t(table_name)

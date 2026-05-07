@@ -177,6 +177,27 @@ def list_files():
     return jsonify(result)
 
 
+@file_bp.route("/browse", methods=["GET"])
+@login_required
+def browse_files():
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+    parent_id = request.args.get("parent_id", "root") or "root"
+    owner = None if g.current_role == "admin" else g.current_user
+    folders = hbase.list_child_folders(config.HBASE_TABLE_FOLDERS, g.current_user, parent_id)
+    files_result = hbase.list_files(config.HBASE_TABLE_FILES, owner=owner, page=1, page_size=config.MAX_PAGE_SIZE)
+    files = []
+    for f in files_result["files"]:
+        if f.get("parent_id", "root") != parent_id:
+            continue
+        files.append({**f, "item_type": "file", "display_name": f.get("display_name") or f.get("filename", "")})
+    return jsonify({
+        "parent_id": parent_id,
+        "breadcrumbs": [{"folder_id": "root", "name": "全部文件"}],
+        "items": folders + files,
+    })
+
+
 @file_bp.route("/recent", methods=["GET"])
 @login_required
 def recent_files():
