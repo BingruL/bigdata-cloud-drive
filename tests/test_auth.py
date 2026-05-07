@@ -1,4 +1,9 @@
 """认证相关集成测试 —— 注册 / 登录 / Token 校验"""
+import time
+
+import jwt
+
+from backend.auth.jwt_handler import JWTHandler
 
 
 def test_register_success(client):
@@ -57,3 +62,29 @@ def test_protected_route_rejects_invalid_token(client):
     rv = client.get("/api/files/list",
                     headers={"Authorization": "Bearer not-a-real-token"})
     assert rv.status_code == 401
+
+
+def test_jwt_verify_allows_small_iat_clock_skew():
+    handler = JWTHandler("secret", 24)
+    now = int(time.time())
+    token = jwt.encode({
+        "username": "alice",
+        "role": "user",
+        "iat": now + 2,
+        "exp": now + 3600,
+    }, "secret", algorithm="HS256")
+
+    assert handler.verify_token(token)["username"] == "alice"
+
+
+def test_jwt_verify_rejects_large_future_iat():
+    handler = JWTHandler("secret", 24)
+    now = int(time.time())
+    token = jwt.encode({
+        "username": "alice",
+        "role": "user",
+        "iat": now + 30,
+        "exp": now + 3600,
+    }, "secret", algorithm="HS256")
+
+    assert handler.verify_token(token) is None

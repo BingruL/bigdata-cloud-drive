@@ -41,7 +41,7 @@ class JWTHandler:
         返回 payload 或 None
         """
         try:
-            payload = jwt.decode(token, self.secret, algorithms=["HS256"])
+            payload = jwt.decode(token, self.secret, algorithms=["HS256"], leeway=5)
             return payload
         except jwt.ExpiredSignatureError:
             logger.warning("Token 已过期")

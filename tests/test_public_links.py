@@ -61,6 +61,22 @@ def test_password_protected_link_rejects_and_accepts_password(client, alice):
     assert ok.data == b"secret"
 
 
+def test_public_download_probe_and_form_password(client, alice):
+    _, _, headers = alice
+    file_info = _upload(client, headers, "form-secret.txt", b"secret")
+    link = _create_link(client, headers, file_info["file_id"], {"password": "open"})
+
+    bad_probe = client.post(f"/api/public-links/{link['token']}/download?probe=1", json={"password": "bad"})
+    ok_probe = client.post(f"/api/public-links/{link['token']}/download?probe=1", json={"password": "open"})
+    form_download = client.post(f"/api/public-links/{link['token']}/download", data={"password": "open"})
+
+    assert bad_probe.status_code == 403
+    assert ok_probe.status_code == 200
+    assert ok_probe.get_json()["ok"] is True
+    assert form_download.status_code == 200
+    assert form_download.data == b"secret"
+
+
 def test_non_owner_cannot_create_public_link(client, alice, bob):
     _, _, ah = alice
     _, _, bh = bob
@@ -222,3 +238,10 @@ def test_display_name_used_in_public_download_filename(client, app, alice):
     rv = client.post(f"/api/public-links/{link['token']}/download", json={})
     assert rv.status_code == 200
     assert "renamed.txt" in rv.headers["Content-Disposition"]
+
+
+def test_public_share_page_route_serves_standalone_page(client):
+    rv = client.get("/s/example-token")
+
+    assert rv.status_code == 200
+    assert b"public-share" in rv.data

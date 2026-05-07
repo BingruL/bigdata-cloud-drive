@@ -16,6 +16,8 @@ def _now_ms():
 
 
 def _json_object():
+    if request.form:
+        return request.form.to_dict()
     if not request.data:
         return {}
     try:
@@ -218,6 +220,9 @@ def download_public_link(token):
     password_hash = link.get("password_hash", "")
     if password_hash and not verify_password(str(body.get("password", "")), password_hash):
         return jsonify({"error": "访问密码错误"}), 403
+
+    if request.args.get("probe") == "1":
+        return jsonify({"ok": True})
 
     hdfs_path = meta.get("hdfs_path")
     if not hdfs_path:

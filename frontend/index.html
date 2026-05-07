@@ -241,6 +241,7 @@
                       <button v-if="isFile(f)" @click="doPreview(f)" class="btn-sm" title="预览"><i data-lucide="eye"></i></button>
                       <button v-if="isFile(f)" @click="doDownload(f)" class="btn-sm" title="下载"><i data-lucide="download"></i></button>
                       <button v-if="isFile(f)" @click="openShareModal(f)" class="btn-sm" title="分享到群组"><i data-lucide="share-2"></i></button>
+                      <button v-if="isFile(f)" @click="openPublicLinkModal(f)" class="btn-sm" title="公开链接"><i data-lucide="link"></i></button>
                       <button v-if="isFile(f)" @click="doGenerateSummary(f)" class="btn-sm" title="AI 摘要"><i data-lucide="sparkles"></i></button>
                       <button @click="openRenameModal(f)" class="btn-sm" title="重命名"><i data-lucide="pencil"></i></button>
                       <button @click="openMoveModal(f)" class="btn-sm" title="移动"><i data-lucide="folder-input"></i></button>
@@ -321,6 +322,7 @@
                   <button v-if="isFile(f)" @click="doPreview(f)" class="btn-sm" title="预览"><i data-lucide="eye"></i></button>
                   <button v-if="isFile(f)" @click="doDownload(f)" class="btn-sm" title="下载"><i data-lucide="download"></i></button>
                   <button v-if="isFile(f)" @click="openShareModal(f)" class="btn-sm" title="分享到群组"><i data-lucide="share-2"></i></button>
+                  <button v-if="isFile(f)" @click="openPublicLinkModal(f)" class="btn-sm" title="公开链接"><i data-lucide="link"></i></button>
                   <button v-if="isFile(f)" @click="doGenerateSummary(f)" class="btn-sm" title="AI 摘要"><i data-lucide="sparkles"></i></button>
                   <button @click="openRenameModal(f)" class="btn-sm" title="重命名"><i data-lucide="pencil"></i></button>
                   <button @click="openMoveModal(f)" class="btn-sm" title="移动"><i data-lucide="folder-input"></i></button>
@@ -894,6 +896,40 @@
         <div class="modal-actions">
           <button class="btn btn-secondary" @click="moveModal=null">取消</button>
           <button class="btn btn-primary" @click="confirmMove">移动</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 公开链接弹窗 -->
+    <div v-if="publicLinkModal" class="modal-overlay" @click.self="publicLinkModal=null">
+      <div class="modal-card share-modal public-link-modal">
+        <h3>公开链接</h3>
+        <p class="modal-filename">{{ itemName(publicLinkModal.file) }}</p>
+        <div class="public-link-create">
+          <div class="modal-form-row">
+            <label>有效期（天）</label>
+            <input v-model.number="publicLinkModal.expiresDays" type="number" min="1" max="365">
+          </div>
+          <div class="modal-form-row">
+            <label>提取码</label>
+            <input v-model="publicLinkModal.password" type="text" maxlength="128" placeholder="可选">
+          </div>
+          <button class="btn btn-primary" @click="createPublicLink">生成链接</button>
+        </div>
+        <div class="public-link-list" v-if="publicLinkModal.links.length">
+          <div v-for="link in publicLinkModal.links" :key="link.token" class="public-link-row" :class="{disabled: link.enabled !== '1'}">
+            <input :value="publicShareUrl(link)" readonly>
+            <span class="public-link-meta">下载 {{ link.download_count || 0 }} 次 · {{ link.requires_password ? '有提取码' : '无提取码' }}</span>
+            <span class="public-link-meta">有效期至 {{ formatTime(link.expires_at) }}</span>
+            <button class="btn-sm" @click="copyPublicShareUrl(link)" title="复制"><i data-lucide="copy"></i></button>
+            <button class="btn-sm btn-danger" @click="revokePublicLink(link)" :disabled="link.enabled !== '1'" title="撤销"><i data-lucide="unlink"></i></button>
+          </div>
+        </div>
+        <div v-else class="empty-state" style="padding:24px;text-align:center">
+          暂无公开链接
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" @click="publicLinkModal=null">关闭</button>
         </div>
       </div>
     </div>

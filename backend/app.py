@@ -117,6 +117,10 @@ def create_app():
     def docs_page():
         return send_from_directory(app.static_folder, "docs.html")
 
+    @app.route("/s/<token>")
+    def public_share_page(token):
+        return send_from_directory(app.static_folder, "public.html")
+
     @app.route("/<path:path>")
     def serve_static(path):
         file_path = os.path.join(app.static_folder, path)

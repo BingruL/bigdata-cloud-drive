@@ -76,6 +76,7 @@ const app = createApp({
     const newMemberName = ref("");
     const sharedFiles = ref([]);             // 群组共享给我的文件
     const shareModal = ref(null);            // { file, selected: Set<gid> }
+    const publicLinkModal = ref(null);
 
     // ===== Logs State =====
     const logs = ref([]);
@@ -111,6 +112,16 @@ const app = createApp({
     function itemName(item) {
       if (!item) return "";
       return isFolder(item) ? (item.name || "") : (item.display_name || item.filename || "");
+    }
+
+    function escapeHtml(value) {
+      return (value ?? "").toString().replace(/[&<>"']/g, ch => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      }[ch]));
     }
 
     function visibleBrowseItems() {
@@ -571,14 +582,14 @@ const app = createApp({
           formatter: function (params) {
             if (params.dataType === "node") {
               const d = params.data._raw;
-              let html = `<div style="font-weight:600;margin-bottom:4px">${d.name}</div>`;
-              html += `<div>类型: ${(d.type || "未知").toUpperCase()}</div>`;
+              let html = `<div style="font-weight:600;margin-bottom:4px">${escapeHtml(d.name)}</div>`;
+              html += `<div>类型: ${escapeHtml((d.type || "未知").toUpperCase())}</div>`;
               html += `<div>大小: ${formatSize(d.size)}</div>`;
-              html += `<div>所有者: ${d.owner}</div>`;
+              html += `<div>所有者: ${escapeHtml(d.owner)}</div>`;
               html += `<div>下载: ${d.downloads} 次</div>`;
               html += `<div>关联数: ${params.data._degree}</div>`;
-              if (d.tags) html += `<div>标签: ${d.tags}</div>`;
-              if (d.summary) html += `<div style="max-width:250px;margin-top:4px;color:#718096">${d.summary.substring(0, 80)}...</div>`;
+              if (d.tags) html += `<div>标签: ${escapeHtml(d.tags)}</div>`;
+              if (d.summary) html += `<div style="max-width:250px;margin-top:4px;color:#718096">${escapeHtml(d.summary.substring(0, 80))}...</div>`;
               return html;
             }
             if (params.dataType === "edge") {
@@ -1073,6 +1084,82 @@ const app = createApp({
       }
     }
 
+    async function openPublicLinkModal(file) {
+      try {
+        const data = await api(`/files/${file.file_id}/public-links`);
+        publicLinkModal.value = {
+          file,
+          links: data.links || data.public_links || [],
+          expiresDays: 7,
+          password: "",
+        };
+      } catch (e) {
+        showToast("加载公开链接失败: " + e.message, "error");
+      }
+    }
+
+    async function createPublicLink() {
+      if (!publicLinkModal.value) return;
+      const modal = publicLinkModal.value;
+      const expiresDays = Number(modal.expiresDays || 7);
+      if (!Number.isInteger(expiresDays) || expiresDays < 1 || expiresDays > 365) {
+        showToast("有效期必须是 1 到 365 天", "error");
+        return;
+      }
+      try {
+        const data = await api(`/files/${modal.file.file_id}/public-links`, {
+          method: "POST",
+          body: JSON.stringify({
+            expires_in_days: expiresDays,
+            password: modal.password || "",
+          }),
+        });
+        modal.links = [data.public_link || data, ...(modal.links || [])];
+        modal.password = "";
+        showToast("公开链接已生成", "success");
+      } catch (e) {
+        showToast("生成公开链接失败: " + e.message, "error");
+      }
+    }
+
+    async function revokePublicLink(link) {
+      if (!publicLinkModal.value || !link) return;
+      if (!confirm("撤销这个公开链接？")) return;
+      try {
+        await api(`/files/${publicLinkModal.value.file.file_id}/public-links/${link.token}`, { method: "DELETE" });
+        publicLinkModal.value.links = (publicLinkModal.value.links || []).map(item =>
+          item.token === link.token ? { ...item, enabled: "0" } : item
+        );
+        showToast("公开链接已撤销", "success");
+      } catch (e) {
+        showToast("撤销公开链接失败: " + e.message, "error");
+      }
+    }
+
+    function publicShareUrl(link) {
+      return `${location.origin}/s/${encodeURIComponent(link.token)}`;
+    }
+
+    async function copyPublicShareUrl(link) {
+      const url = publicShareUrl(link);
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(url);
+        } else {
+          const input = document.createElement("input");
+          input.value = url;
+          document.body.appendChild(input);
+          input.select();
+          const copied = document.execCommand("copy");
+          input.remove();
+          if (!copied) throw new Error("copy failed");
+        }
+        showToast("链接已复制", "success");
+      } catch (e) {
+        showToast("复制失败，请手动复制", "error");
+      }
+    }
+
     // ===== Selection helpers =====
     function isSelected(id) {
       selectedIdsVersion.value;  // subscribe
@@ -1347,10 +1434,11 @@ const app = createApp({
       dashboardData,
       realtimeData, realtimeTotalActions,
       recTab, recommendFiles, recommendScope, recommendScopeLabel,
-      myGroups, groupDetail, newGroupForm, newMemberName, sharedFiles, shareModal,
+      myGroups, groupDetail, newGroupForm, newMemberName, sharedFiles, shareModal, publicLinkModal,
       loadGroups, doCreateGroup, openGroupDetail, doAddMember, doRemoveMember,
       doDeleteGroup, isGroupOwner,
       loadShared, openShareModal, toggleShareGroup, isShareGroupChecked, confirmShare,
+      openPublicLinkModal, createPublicLink, revokePublicLink, publicShareUrl, copyPublicShareUrl,
       logs,
       storageInfo, recentFiles, trashFiles,
       sortKey, sortDir, toggleSort, sortedFiles, sortedItems,

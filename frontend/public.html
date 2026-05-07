@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>公开分享 - 智能云盘</title>
+  <link rel="stylesheet" href="/css/style.css?v=20260501b">
+</head>
+<body class="public-share-page">
+  <main class="public-share-card">
+    <div class="public-share-brand">智能云盘</div>
+    <section id="share-content" class="public-share-content">
+      <div class="spinner" style="margin:0 auto 12px"></div>
+      <p>正在读取分享信息...</p>
+    </section>
+  </main>
+
+  <script>
+    const token = decodeURIComponent(location.pathname.split("/").filter(Boolean).pop() || "");
+    const box = document.getElementById("share-content");
+    let meta = null;
+
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, ch => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[ch]));
+    }
+
+    function sizeText(value) {
+      const n = Number(value || 0);
+      if (n < 1024) return n + " B";
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+      if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + " MB";
+      return (n / 1024 / 1024 / 1024).toFixed(1) + " GB";
+    }
+
+    function timeText(value) {
+      const ts = Number(value || 0);
+      if (!ts) return "无";
+      return new Date(ts).toLocaleString("zh-CN");
+    }
+
+    function showError(message) {
+      box.innerHTML = `
+        <h1>分享不可用</h1>
+        <p class="public-share-error">${escapeHtml(message || "链接不存在或已失效")}</p>
+      `;
+    }
+
+    async function loadShare() {
+      try {
+        const resp = await fetch(`/api/public-links/${encodeURIComponent(token)}`);
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.state !== "active") {
+          showError(data.error || "链接不存在或已失效");
+          return;
+        }
+        meta = data;
+        box.innerHTML = `
+          <h1>${escapeHtml(data.filename)}</h1>
+          <p class="public-share-meta">
+            ${escapeHtml((data.type || "file").toUpperCase())} · ${sizeText(data.size)} · 有效期至 ${timeText(data.expires_at)}
+          </p>
+          ${data.requires_password ? `
+            <label class="public-share-password">
+              <span>提取码</span>
+              <input id="share-password" type="password" autocomplete="off" placeholder="请输入提取码">
+            </label>
+          ` : ""}
+          <button id="download-btn" class="btn btn-primary public-share-download">下载文件</button>
+          <p id="share-error" class="public-share-error"></p>
+        `;
+        document.getElementById("download-btn").addEventListener("click", downloadFile);
+      } catch (e) {
+        showError("读取分享信息失败，请稍后重试");
+      }
+    }
+
+    async function downloadFile() {
+      const err = document.getElementById("share-error");
+      const btn = document.getElementById("download-btn");
+      const passwordEl = document.getElementById("share-password");
+      const password = passwordEl ? passwordEl.value : "";
+      err.textContent = "";
+      btn.disabled = true;
+      try {
+        const probe = await fetch(`/api/public-links/${encodeURIComponent(token)}/download?probe=1`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password }),
+        });
+        if (!probe.ok) {
+          const body = await probe.json().catch(() => ({ error: "下载失败" }));
+          err.textContent = body.error || "下载失败";
+          return;
+        }
+        submitNativeDownload(password);
+      } catch (e) {
+        err.textContent = "下载失败，请稍后重试";
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function submitNativeDownload(password) {
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = `/api/public-links/${encodeURIComponent(token)}/download`;
+      form.style.display = "none";
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "password";
+      input.value = password || "";
+      form.appendChild(input);
+      document.body.appendChild(form);
+      form.submit();
+      form.remove();
+    }
+
+    loadShare();
+  </script>
+</body>
+</html>
