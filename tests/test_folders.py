@@ -351,3 +351,150 @@ def test_cross_namespace_naming_with_files_and_folders(client, alice):
     assert renamed_file.status_code == 200
     assert renamed_file.get_json()["display_name"] == "报告 (1).pdf"
     assert folder2["name"] == "报告.pdf"
+
+
+def test_browse_returns_real_breadcrumb_chain(client, alice):
+    _, _, headers = alice
+    parent = _create_folder(client, headers, "父")
+    child = _create_folder(client, headers, "子", parent["folder_id"])
+
+    rv = client.get(f"/api/files/browse?parent_id={child['folder_id']}", headers=headers)
+    assert rv.status_code == 200
+    crumbs = rv.get_json()["breadcrumbs"]
+    assert [c["name"] for c in crumbs] == ["全部文件", "父", "子"]
+    assert [c["folder_id"] for c in crumbs] == ["root", parent["folder_id"], child["folder_id"]]
+
+
+def test_get_single_folder(client, alice, bob):
+    _, _, headers = alice
+    _, _, bob_headers = bob
+    folder = _create_folder(client, headers, "doc")
+
+    own = client.get(f"/api/folders/{folder['folder_id']}", headers=headers)
+    cross = client.get(f"/api/folders/{folder['folder_id']}", headers=bob_headers)
+    missing = client.get("/api/folders/no-such-folder", headers=headers)
+    root = client.get("/api/folders/root", headers=headers)
+
+    assert own.status_code == 200
+    assert own.get_json()["name"] == "doc"
+    assert cross.status_code == 403
+    assert missing.status_code == 404
+    assert root.status_code == 200
+    assert root.get_json()["folder_id"] == "root"
+
+
+def test_folder_trash_lists_only_top_level_deletes(client, alice):
+    _, _, headers = alice
+    parent = _create_folder(client, headers, "父")
+    child = _create_folder(client, headers, "子", parent["folder_id"])
+    sibling = _create_folder(client, headers, "邻居")
+
+    assert client.delete(f"/api/folders/{parent['folder_id']}", headers=headers).status_code == 200
+    assert client.delete(f"/api/folders/{sibling['folder_id']}", headers=headers).status_code == 200
+
+    rv = client.get("/api/folders/trash", headers=headers)
+    assert rv.status_code == 200
+    body = rv.get_json()
+    folder_ids = {f["folder_id"] for f in body["folders"]}
+    assert parent["folder_id"] in folder_ids
+    assert sibling["folder_id"] in folder_ids
+    assert child["folder_id"] not in folder_ids
+    assert all(f.get("item_type") == "folder" for f in body["folders"])
+
+
+def test_file_trash_hides_files_inside_deleted_folder(client, alice):
+    _, _, headers = alice
+    parent = _create_folder(client, headers, "父")
+    nested_file = _upload(client, headers, "nested.txt", b"x", parent["folder_id"]).get_json()["file"]
+    standalone_file = _upload(client, headers, "loose.txt", b"x").get_json()["file"]
+    assert client.delete(f"/api/files/{standalone_file['file_id']}", headers=headers).status_code == 200
+    assert client.delete(f"/api/folders/{parent['folder_id']}", headers=headers).status_code == 200
+
+    rv = client.get("/api/files/trash", headers=headers)
+    assert rv.status_code == 200
+    visible_ids = {f["file_id"] for f in rv.get_json()["files"]}
+    assert standalone_file["file_id"] in visible_ids
+    assert nested_file["file_id"] not in visible_ids
+
+
+def test_folder_tree_returns_only_my_active_folders(client, alice, bob):
+    _, _, alice_headers = alice
+    _, _, bob_headers = bob
+    a_root = _create_folder(client, alice_headers, "alice-root")
+    a_child = _create_folder(client, alice_headers, "alice-child", a_root["folder_id"])
+    a_trashed = _create_folder(client, alice_headers, "alice-trashed")
+    _create_folder(client, bob_headers, "bob-root")
+    assert client.delete(f"/api/folders/{a_trashed['folder_id']}", headers=alice_headers).status_code == 200
+
+    rv = client.get("/api/folders/tree", headers=alice_headers)
+    assert rv.status_code == 200
+    folder_ids = {f["folder_id"] for f in rv.get_json()["folders"]}
+    assert a_root["folder_id"] in folder_ids
+    assert a_child["folder_id"] in folder_ids
+    assert a_trashed["folder_id"] not in folder_ids
+    for f in rv.get_json()["folders"]:
+        assert f.get("owner") == "alice"
+
+
+def test_folder_summary_counts_subtree(client, alice):
+    _, _, headers = alice
+    parent = _create_folder(client, headers, "父")
+    _create_folder(client, headers, "子A", parent["folder_id"])
+    childB = _create_folder(client, headers, "子B", parent["folder_id"])
+    _upload(client, headers, "p.txt", b"12345", parent["folder_id"])
+    _upload(client, headers, "b.txt", b"abc", childB["folder_id"])
+
+    rv = client.get(f"/api/folders/{parent['folder_id']}/summary", headers=headers)
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["folder_count"] == 2
+    assert body["file_count"] == 2
+    assert body["total_size"] == 5 + 3
+
+
+def test_folder_summary_rejects_cross_owner(client, alice, bob):
+    _, _, alice_headers = alice
+    _, _, bob_headers = bob
+    folder = _create_folder(client, alice_headers, "alice-folder")
+    rv = client.get(f"/api/folders/{folder['folder_id']}/summary", headers=bob_headers)
+    assert rv.status_code == 403
+
+
+def test_rename_keeps_type_in_sync_with_extension(client, app, alice):
+    _, _, headers = alice
+    uploaded = _upload(client, headers, "report.pdf", b"%PDF-1.4")
+    fid = uploaded.get_json()["file"]["file_id"]
+
+    renamed = client.patch(f"/api/files/{fid}/rename", headers=headers, json={"name": "report.docx"})
+    assert renamed.status_code == 200
+    assert renamed.get_json()["display_name"] == "report.docx"
+    assert renamed.get_json()["type"] == "docx"
+
+
+def test_rename_without_extension_preserves_type(client, alice):
+    _, _, headers = alice
+    uploaded = _upload(client, headers, "report.pdf", b"%PDF-1.4")
+    fid = uploaded.get_json()["file"]["file_id"]
+
+    renamed = client.patch(f"/api/files/{fid}/rename", headers=headers, json={"name": "report"})
+    assert renamed.status_code == 200
+    body = renamed.get_json()
+    assert body["display_name"] == "report"
+    assert body["type"] == "pdf"
+
+
+def test_folder_trash_restore_round_trip(client, app, alice):
+    _, _, headers = alice
+    parent = _create_folder(client, headers, "父")
+    uploaded = _upload(client, headers, "child.txt", b"x", parent["folder_id"]).get_json()["file"]
+    assert client.delete(f"/api/folders/{parent['folder_id']}", headers=headers).status_code == 200
+
+    listed = client.get("/api/folders/trash", headers=headers).get_json()["folders"]
+    assert any(f["folder_id"] == parent["folder_id"] for f in listed)
+
+    restored = client.post(f"/api/folders/{parent['folder_id']}/restore", headers=headers)
+    assert restored.status_code == 200
+    assert client.get(f"/api/files/{uploaded['file_id']}", headers=headers).status_code == 200
+
+    again = client.get("/api/folders/trash", headers=headers).get_json()["folders"]
+    assert all(f["folder_id"] != parent["folder_id"] for f in again)

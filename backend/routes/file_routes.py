@@ -92,6 +92,23 @@ def _folder_chain_active(hbase, config, parent_id, owner):
     return True
 
 
+def _build_breadcrumbs(hbase, config, parent_id):
+    """Walk parent_id back to root and return [{folder_id, name}, ...]."""
+    crumbs = []
+    seen = set()
+    current_id = parent_id or "root"
+    while current_id != "root" and current_id not in seen:
+        seen.add(current_id)
+        folder = hbase.get_folder(config.HBASE_TABLE_FOLDERS, current_id)
+        if not folder:
+            break
+        crumbs.append({"folder_id": current_id, "name": folder.get("name", "")})
+        current_id = folder.get("parent_id", "root") or "root"
+    crumbs.append({"folder_id": "root", "name": "全部文件"})
+    crumbs.reverse()
+    return crumbs
+
+
 def _owned_active_file(hbase, config, file_id):
     meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
     if not meta or meta.get("deleted") == "1":
@@ -272,7 +289,7 @@ def browse_files():
         files.append({**f, "item_type": "file", "display_name": f.get("display_name") or f.get("filename", "")})
     return jsonify({
         "parent_id": parent_id,
-        "breadcrumbs": [{"folder_id": "root", "name": "全部文件"}],
+        "breadcrumbs": _build_breadcrumbs(hbase, config, parent_id),
         "items": folders + files,
     })
 
@@ -338,7 +355,7 @@ def list_trash():
     result = hbase.list_files(
         config.HBASE_TABLE_FILES,
         owner=owner, page=page, page_size=page_size,
-        only_deleted=True,
+        only_deleted=True, exclude_folder_deletes=True,
     )
     return jsonify(result)
 
@@ -409,11 +426,11 @@ def rename_file(file_id):
         name,
         exclude_file_id=file_id,
     )
-    hbase.update_file_meta_fields(
-        config.HBASE_TABLE_FILES,
-        file_id,
-        {"display_name": display_name, "updated_at": _now_ms()},
-    )
+    fields = {"display_name": display_name, "updated_at": _now_ms()}
+    new_ext = display_name.rsplit(".", 1)[1].lower() if "." in display_name and not display_name.endswith(".") else ""
+    if new_ext:
+        fields["type"] = new_ext
+    hbase.update_file_meta_fields(config.HBASE_TABLE_FILES, file_id, fields)
     current_app.config["EVENT_BUS"].log(g.current_user, "rename", file_id)
     updated = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
     return jsonify(updated)

@@ -175,7 +175,8 @@ class HBaseService:
     def list_files(self, table_name, owner=None, file_type=None,
                    keyword=None, page=1, page_size=20,
                    include_deleted=False, only_deleted=False,
-                   start_date=None, end_date=None):
+                   start_date=None, end_date=None,
+                   exclude_folder_deletes=False):
         """
         列出文件（支持筛选）
         owner: 按所属用户筛选
@@ -199,6 +200,10 @@ class HBaseService:
                     if not is_deleted:
                         continue
                 elif not include_deleted and is_deleted:
+                    continue
+
+                # 隐藏被父级文件夹连带删除的项（回收站只展示顶层删除）
+                if exclude_folder_deletes and file_info.get("deleted_by_folder"):
                     continue
 
                 # 应用过滤条件
@@ -312,6 +317,37 @@ class HBaseService:
                 f"meta:{k}".encode(): str(v).encode() for k, v in meta.items()
             })
         return {"folder_id": folder_id, **meta}
+
+    def list_user_folders(self, table_name, owner, include_deleted=False):
+        """列出当前用户的全部文件夹（树形选择器使用）。"""
+        rows = []
+        for folder in self._scan_folders_raw(table_name):
+            if folder.get("owner") != owner:
+                continue
+            if not include_deleted and folder.get("deleted") == "1":
+                continue
+            rows.append(folder)
+        rows.sort(key=lambda r: r.get("name", ""))
+        return rows
+
+    def list_trashed_folders(self, table_name, owner=None):
+        """回收站文件夹列表：只返回顶层删除项。
+
+        顶层删除：deleted_by_folder == folder_id（新数据）或 deleted_by_folder 缺失（旧数据兜底）。
+        owner=None 时不按用户过滤（管理员视图）。
+        """
+        rows = []
+        for folder in self._scan_folders_raw(table_name):
+            if folder.get("deleted") != "1":
+                continue
+            marker = folder.get("deleted_by_folder")
+            if marker and marker != folder.get("folder_id"):
+                continue
+            if owner and folder.get("owner") != owner:
+                continue
+            rows.append(folder)
+        rows.sort(key=lambda r: r.get("deleted_at", "0"), reverse=True)
+        return rows
 
     def list_child_folders(self, table_name, owner, parent_id, include_deleted=False, only_deleted=False):
         """列出指定父目录下的文件夹。"""

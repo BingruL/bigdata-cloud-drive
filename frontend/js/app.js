@@ -33,10 +33,14 @@ const app = createApp({
     const filePagination = reactive({ page: 1, total: 0, total_pages: 0 });
     const searchKeyword = ref("");
     const filterType = ref("");
-    const uploading = ref(false);
+    const uploadProgress = ref(null);
     const summaryModal = ref(null);
     const previewModal = ref(null);
     const previewLoading = ref(false);
+    const folderTreeFolders = ref([]);
+    const searchActive = ref(false);
+    const searchResults = ref([]);
+    const searchLoading = ref(false);
     const fileViewMode = ref("list"); // "list" / "grid" / "graph"
     const gridSortOptions = [
       { k: "filename",   l: "文件名" },
@@ -171,6 +175,7 @@ const app = createApp({
     });
     const recentFiles = ref([]);
     const trashFiles = ref([]);
+    const trashFolders = ref([]);
 
     // ===== Helpers =====
     function showToast(message, type = "info") {
@@ -253,6 +258,12 @@ const app = createApp({
 
     // ===== Files =====
     async function loadFiles(page = 1, options = {}) {
+      // 搜索关键词非空 → 走全局搜索；否则走当前目录浏览
+      if ((searchKeyword.value || "").trim()) {
+        return runSearch(options);
+      }
+      searchActive.value = false;
+      searchResults.value = [];
       const requestSeq = ++browseRequestSeq;
       const requestedFolderId = currentFolderId.value || "root";
       try {
@@ -278,6 +289,41 @@ const app = createApp({
         if (options.rethrow) throw e;
         return false;
       }
+    }
+
+    async function runSearch(options = {}) {
+      searchActive.value = true;
+      searchLoading.value = true;
+      try {
+        const params = new URLSearchParams({
+          keyword: searchKeyword.value.trim(),
+          page: 1,
+          page_size: 200,
+        });
+        if (filterType.value) params.append("type", filterType.value);
+        const data = await api("/files/search?" + params.toString());
+        searchResults.value = (data.files || []).map(f => ({ ...f, item_type: "file" }));
+        items.value = searchResults.value;
+        clearSelection();
+        filePagination.page = 1;
+        filePagination.total = searchResults.value.length;
+        filePagination.total_pages = 1;
+        return true;
+      } catch (e) {
+        showToast("搜索失败: " + e.message, "error");
+        if (options.rethrow) throw e;
+        return false;
+      } finally {
+        searchLoading.value = false;
+      }
+    }
+
+    function clearSearch() {
+      if (!searchKeyword.value && !searchActive.value) return;
+      searchKeyword.value = "";
+      searchActive.value = false;
+      searchResults.value = [];
+      loadFiles();
     }
 
     function goPage(p) {
@@ -329,21 +375,35 @@ const app = createApp({
     async function doUpload(event) {
       const fileList = event.target.files;
       if (!fileList.length) return;
-      uploading.value = true;
+      const total = fileList.length;
+      let ok = 0, fail = 0;
+      uploadProgress.value = { i: 0, n: total, name: "" };
       try {
-        for (const file of fileList) {
-          const formData = new FormData();
-          formData.append("file", file);
-          formData.append("parent_id", currentFolderId.value || "root");
-          await api("/files/upload", { method: "POST", body: formData });
+        for (let i = 0; i < total; i++) {
+          const file = fileList[i];
+          uploadProgress.value = { i: i + 1, n: total, name: file.name };
+          try {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("parent_id", currentFolderId.value || "root");
+            await api("/files/upload", { method: "POST", body: formData });
+            ok++;
+          } catch (e) {
+            fail++;
+            console.warn(`上传 ${file.name} 失败：${e.message}`);
+          }
         }
-        showToast(`${fileList.length} 个文件上传成功`, "success");
+        if (fail === 0) {
+          showToast(`${ok} 个文件上传成功`, "success");
+        } else if (ok === 0) {
+          showToast(`全部 ${fail} 个文件上传失败`, "error");
+        } else {
+          showToast(`已上传 ${ok} 个，${fail} 个失败`, "error");
+        }
         loadFiles();
         loadStorage();
-      } catch (e) {
-        showToast("上传失败: " + e.message, "error");
       } finally {
-        uploading.value = false;
+        uploadProgress.value = null;
         event.target.value = "";
       }
     }
@@ -376,7 +436,21 @@ const app = createApp({
 
     async function doDelete(f) {
       const name = itemName(f);
-      if (!confirm(`将 "${name}" 移至回收站？\n可在"回收站"中恢复或彻底删除。`)) return;
+      let confirmMsg;
+      if (isFolder(f)) {
+        let summary = null;
+        try {
+          summary = await api(`/folders/${f.folder_id}/summary`);
+        } catch (_) { /* 兜底：不阻塞删除 */ }
+        if (summary && (summary.folder_count || summary.file_count)) {
+          confirmMsg = `将文件夹 "${name}" 移至回收站？\n包含 ${summary.folder_count} 个子文件夹、${summary.file_count} 个文件，约占 ${formatSize(summary.total_size)}。\n可在"回收站"中恢复或彻底删除。`;
+        } else {
+          confirmMsg = `将空文件夹 "${name}" 移至回收站？`;
+        }
+      } else {
+        confirmMsg = `将 "${name}" 移至回收站？\n可在"回收站"中恢复或彻底删除。`;
+      }
+      if (!confirm(confirmMsg)) return;
       try {
         const path = isFolder(f) ? `/folders/${f.folder_id}` : `/files/${f.file_id}`;
         await api(path, { method: "DELETE" });
@@ -469,31 +543,122 @@ const app = createApp({
       }
     }
 
-    function openMoveModal(item) {
-      moveModal.value = { item, targetMode: "root", targetId: "" };
+    async function openMoveModal(item) {
+      moveModal.value = { item, targetId: "root" };
+      await loadFolderTree();
     }
 
-    function moveTargetParentId() {
-      if (!moveModal.value) return "root";
-      if (moveModal.value.targetMode === "current") return currentFolderId.value || "root";
-      if (moveModal.value.targetMode === "custom") return (moveModal.value.targetId || "").trim() || "root";
-      return "root";
+    async function openBatchMoveModal() {
+      const visibleIds = new Set(files.value.map(f => f.file_id));
+      const ids = [...selectedIds.value].filter(id => visibleIds.has(id));
+      if (!ids.length) {
+        showToast("请先选择要移动的文件", "error");
+        return;
+      }
+      moveModal.value = { batchIds: ids, targetId: "root" };
+      await loadFolderTree();
     }
+
+    async function loadFolderTree() {
+      try {
+        const data = await api("/folders/tree");
+        folderTreeFolders.value = data.folders || [];
+      } catch (e) {
+        showToast("加载目录树失败: " + e.message, "error");
+        folderTreeFolders.value = [];
+      }
+    }
+
+    function setMoveTarget(folderId) {
+      if (!moveModal.value) return;
+      moveModal.value.targetId = folderId;
+    }
+
+    const moveDisabledIds = computed(() => {
+      const disabled = new Set();
+      if (!moveModal.value) return disabled;
+      const item = moveModal.value.item;
+      if (!item || !isFolder(item)) return disabled;
+      const fid = item.folder_id;
+      disabled.add(fid);
+      const queue = [fid];
+      const folders = folderTreeFolders.value;
+      while (queue.length) {
+        const id = queue.shift();
+        for (const f of folders) {
+          if ((f.parent_id || "root") === id && !disabled.has(f.folder_id)) {
+            disabled.add(f.folder_id);
+            queue.push(f.folder_id);
+          }
+        }
+      }
+      return disabled;
+    });
+
+    const flatMoveTree = computed(() => {
+      if (!moveModal.value) return [];
+      const folders = folderTreeFolders.value;
+      const byParent = {};
+      for (const f of folders) {
+        const pid = f.parent_id || "root";
+        (byParent[pid] || (byParent[pid] = [])).push(f);
+      }
+      for (const pid in byParent) {
+        byParent[pid].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      }
+      const disabled = moveDisabledIds.value;
+      const out = [];
+      function walk(parentId, depth) {
+        for (const f of byParent[parentId] || []) {
+          out.push({
+            folder_id: f.folder_id,
+            name: f.name || "(未命名)",
+            parent_id: parentId,
+            depth,
+            disabled: disabled.has(f.folder_id),
+          });
+          walk(f.folder_id, depth + 1);
+        }
+      }
+      out.push({ folder_id: "root", name: "全部文件", parent_id: null, depth: 0, disabled: false });
+      walk("root", 1);
+      return out;
+    });
 
     async function confirmMove() {
       if (!moveModal.value) return;
-      const item = moveModal.value.item;
-      const parent_id = moveTargetParentId();
-      const path = isFolder(item) ? `/folders/${item.folder_id}/move` : `/files/${item.file_id}/move`;
-      try {
-        await api(path, { method: "PATCH", body: JSON.stringify({ parent_id }) });
-        moveModal.value = null;
-        showToast("已移动", "success");
-        clearSelection();
-        loadFiles();
-      } catch (e) {
-        showToast("移动失败: " + e.message, "error");
+      const targetId = moveModal.value.targetId || "root";
+      if (moveDisabledIds.value.has(targetId)) {
+        showToast("不能移动到该目录", "error");
+        return;
       }
+      const body = JSON.stringify({ parent_id: targetId });
+      if (moveModal.value.batchIds && moveModal.value.batchIds.length) {
+        let ok = 0, fail = 0;
+        for (const id of moveModal.value.batchIds) {
+          try {
+            await api(`/files/${id}/move`, { method: "PATCH", body });
+            ok++;
+          } catch (e) {
+            fail++;
+            console.warn(`移动 ${id} 失败：${e.message}`);
+          }
+        }
+        showToast(`已移动 ${ok} 个${fail ? `（失败 ${fail}）` : ""}`, fail ? "error" : "success");
+      } else {
+        const item = moveModal.value.item;
+        const path = isFolder(item) ? `/folders/${item.folder_id}/move` : `/files/${item.file_id}/move`;
+        try {
+          await api(path, { method: "PATCH", body });
+          showToast("已移动", "success");
+        } catch (e) {
+          showToast("移动失败: " + e.message, "error");
+          return;
+        }
+      }
+      moveModal.value = null;
+      clearSelection();
+      loadFiles();
     }
 
     // ===== File Graph =====
@@ -1215,6 +1380,12 @@ const app = createApp({
     }
     const selectionCount = computed(() => { selectedIdsVersion.value; return selectedIds.value.size; });
 
+    const uploadProgressPercent = computed(() => {
+      const p = uploadProgress.value;
+      if (!p || !p.n) return 0;
+      return Math.min(100, Math.round((p.i / p.n) * 100));
+    });
+
     watch([items, searchKeyword, filterType], () => {
       syncVisibleFiles();
       reconcileSelectionWithVisibleFiles();
@@ -1303,11 +1474,19 @@ const app = createApp({
 
     // ===== Trash =====
     async function loadTrash() {
-      try {
-        const data = await api("/files/trash?page=1&page_size=100");
-        trashFiles.value = data.files || [];
-      } catch (e) {
-        showToast("加载回收站失败: " + e.message, "error");
+      const [filesResult, foldersResult] = await Promise.allSettled([
+        api("/files/trash?page=1&page_size=100"),
+        api("/folders/trash"),
+      ]);
+      if (filesResult.status === "fulfilled") {
+        trashFiles.value = filesResult.value.files || [];
+      } else {
+        showToast("加载文件回收站失败: " + filesResult.reason.message, "error");
+      }
+      if (foldersResult.status === "fulfilled") {
+        trashFolders.value = foldersResult.value.folders || [];
+      } else {
+        showToast("加载文件夹回收站失败: " + foldersResult.reason.message, "error");
       }
     }
 
@@ -1327,6 +1506,29 @@ const app = createApp({
       try {
         await api(`/files/${f.file_id}/purge`, { method: "DELETE" });
         showToast("文件已彻底删除", "success");
+        loadTrash();
+        loadStorage();
+      } catch (e) {
+        showToast("彻底删除失败: " + e.message, "error");
+      }
+    }
+
+    async function doRestoreFolder(d) {
+      try {
+        await api(`/folders/${d.folder_id}/restore`, { method: "POST" });
+        showToast("文件夹及其子项已恢复", "success");
+        loadTrash();
+        loadStorage();
+      } catch (e) {
+        showToast("恢复失败: " + e.message, "error");
+      }
+    }
+
+    async function doPurgeFolder(d) {
+      if (!confirm(`确定彻底删除文件夹 "${itemName(d)}" 吗？\n该文件夹及其内的全部文件将从 HDFS 永久移除，无法恢复。`)) return;
+      try {
+        await api(`/folders/${d.folder_id}/purge`, { method: "DELETE" });
+        showToast("文件夹已彻底删除", "success");
         loadTrash();
         loadStorage();
       } catch (e) {
@@ -1422,6 +1624,25 @@ const app = createApp({
       if (page === "shared") { loadShared(); loadGroups(); }
     });
 
+    // ===== Modal stack =====
+    function dismissTopmostModal() {
+      // 优先级：预览 > 公共链接 > 群组分享 > 移动 > 重命名 > 新建文件夹 > AI 摘要
+      if (previewModal.value) { previewModal.value = null; return true; }
+      if (publicLinkModal.value) { publicLinkModal.value = null; return true; }
+      if (shareModal.value) { shareModal.value = null; return true; }
+      if (moveModal.value) { moveModal.value = null; return true; }
+      if (renameModal.value) { renameModal.value = null; return true; }
+      if (newFolderModal.value) { newFolderModal.value = null; return true; }
+      if (summaryModal.value) { summaryModal.value = null; return true; }
+      return false;
+    }
+
+    function handleGlobalKey(e) {
+      if (e.key === "Escape") {
+        if (dismissTopmostModal()) e.preventDefault();
+      }
+    }
+
     // ===== Init =====
     onMounted(() => {
       if (token.value) {
@@ -1431,14 +1652,17 @@ const app = createApp({
       nextTick(() => {
         if (typeof lucide !== "undefined") lucide.createIcons();
       });
+      window.addEventListener("keydown", handleGlobalKey);
     });
 
     return {
       token, username, userRole, authMode, authForm, authError, loading,
       currentPage, toast,
       files, currentFolderId, breadcrumbs, items, moveModal, renameModal, newFolderModal,
-      filePagination, searchKeyword, filterType, uploading, summaryModal,
+      filePagination, searchKeyword, filterType, uploadProgress, uploadProgressPercent, summaryModal,
       previewModal, previewLoading,
+      searchActive, searchResults, searchLoading, clearSearch,
+      flatMoveTree, setMoveTarget, openBatchMoveModal,
       fileViewMode, gridSortOptions, graphData, graphLoading, selectedGraphFile, relatedFiles,
       dashboardData,
       realtimeData, realtimeTotalActions,
@@ -1449,7 +1673,7 @@ const app = createApp({
       loadShared, openShareModal, toggleShareGroup, isShareGroupChecked, confirmShare,
       openPublicLinkModal, createPublicLink, revokePublicLink, publicShareUrl, copyPublicShareUrl,
       logs,
-      storageInfo, recentFiles, trashFiles,
+      storageInfo, recentFiles, trashFiles, trashFolders,
       sortKey, sortDir, toggleSort, sortedFiles, sortedItems,
       isSelected, toggleSelect, toggleSelectAll, clearSelection, selectionCount,
       doBatchDelete, doBatchDownload, doBatchRestore, doBatchPurge,
@@ -1459,7 +1683,7 @@ const app = createApp({
       openNewFolderModal, confirmCreateFolder, openRenameModal, confirmRename, openMoveModal, confirmMove,
       switchFileView, loadRelatedFiles,
       loadRecommend,
-      doRestore, doPurge,
+      doRestore, doPurge, doRestoreFolder, doPurgeFolder,
       formatSize, formatTime, getFileIcon, actionLabel,
     };
   },

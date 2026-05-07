@@ -71,7 +71,7 @@ class FakeHBaseService:
 
     def list_files(self, table_name, owner=None, file_type=None, keyword=None,
                    page=1, page_size=20, include_deleted=False, only_deleted=False,
-                   start_date=None, end_date=None):
+                   start_date=None, end_date=None, exclude_folder_deletes=False):
         files = []
         for fid, row in self._t(table_name).items():
             info = {"file_id": fid, **row}
@@ -80,6 +80,8 @@ class FakeHBaseService:
                 if not is_deleted:
                     continue
             elif not include_deleted and is_deleted:
+                continue
+            if exclude_folder_deletes and info.get("deleted_by_folder"):
                 continue
             if owner and info.get("owner") != owner:
                 continue
@@ -235,6 +237,31 @@ class FakeHBaseService:
     def create_folder(self, table_name, folder_id, meta):
         self._t(table_name)[folder_id] = dict(meta)
         return {"folder_id": folder_id, **meta}
+
+    def list_user_folders(self, table_name, owner, include_deleted=False):
+        rows = []
+        for folder_id, row in self._t(table_name).items():
+            if row.get("owner") != owner:
+                continue
+            if not include_deleted and row.get("deleted") == "1":
+                continue
+            rows.append({"folder_id": folder_id, **row})
+        rows.sort(key=lambda r: r.get("name", ""))
+        return rows
+
+    def list_trashed_folders(self, table_name, owner=None):
+        rows = []
+        for folder_id, row in self._t(table_name).items():
+            if row.get("deleted") != "1":
+                continue
+            marker = row.get("deleted_by_folder")
+            if marker and marker != folder_id:
+                continue
+            if owner and row.get("owner") != owner:
+                continue
+            rows.append({"folder_id": folder_id, **row})
+        rows.sort(key=lambda r: r.get("deleted_at", "0"), reverse=True)
+        return rows
 
     def list_child_folders(self, table_name, owner, parent_id, include_deleted=False, only_deleted=False):
         rows = []

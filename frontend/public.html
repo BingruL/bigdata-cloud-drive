@@ -83,38 +83,51 @@
       const password = passwordEl ? passwordEl.value : "";
       err.textContent = "";
       btn.disabled = true;
+      const originalLabel = btn.textContent;
+      btn.textContent = "下载中…";
       try {
-        const probe = await fetch(`/api/public-links/${encodeURIComponent(token)}/download?probe=1`, {
+        const resp = await fetch(`/api/public-links/${encodeURIComponent(token)}/download`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ password }),
         });
-        if (!probe.ok) {
-          const body = await probe.json().catch(() => ({ error: "下载失败" }));
-          err.textContent = body.error || "下载失败";
+        if (!resp.ok) {
+          let message = "下载失败";
+          try {
+            const body = await resp.json();
+            if (body && body.error) message = body.error;
+          } catch (_) { /* 非 JSON 错误体保留默认文案 */ }
+          err.textContent = message;
           return;
         }
-        submitNativeDownload(password);
+        const blob = await resp.blob();
+        const filename = parseFilenameFromContentDisposition(resp.headers.get("Content-Disposition"))
+          || (meta && meta.filename)
+          || "download";
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
       } catch (e) {
-        err.textContent = "下载失败，请稍后重试";
+        err.textContent = "网络错误，请稍后重试";
       } finally {
         btn.disabled = false;
+        btn.textContent = originalLabel;
       }
     }
 
-    function submitNativeDownload(password) {
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = `/api/public-links/${encodeURIComponent(token)}/download`;
-      form.style.display = "none";
-      const input = document.createElement("input");
-      input.type = "hidden";
-      input.name = "password";
-      input.value = password || "";
-      form.appendChild(input);
-      document.body.appendChild(form);
-      form.submit();
-      form.remove();
+    function parseFilenameFromContentDisposition(header) {
+      if (!header) return "";
+      const utf8Match = /filename\*=UTF-8''([^;]+)/i.exec(header);
+      if (utf8Match) {
+        try { return decodeURIComponent(utf8Match[1]); } catch (_) { /* fall through */ }
+      }
+      const plainMatch = /filename="?([^";]+)"?/i.exec(header);
+      return plainMatch ? plainMatch[1] : "";
     }
 
     loadShare();

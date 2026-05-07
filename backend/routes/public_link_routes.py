@@ -234,7 +234,9 @@ def download_public_link(token):
         hdfs.download_file(hdfs_path, temp_path)
         hbase.increment_public_link_download(config.HBASE_TABLE_PUBLIC_LINKS, token)
         hbase.increment_downloads(config.HBASE_TABLE_FILES, link["file_id"])
-        current_app.config["EVENT_BUS"].log(link.get("owner", "public"), "public_download", link["file_id"])
+        current_app.config["EVENT_BUS"].log(
+            "public", "public_download", f"{link['file_id']} via {token}"
+        )
         return send_file(temp_path, as_attachment=True, download_name=_display_name(meta))
     except Exception:
         current_app.logger.exception("公共链接下载失败")

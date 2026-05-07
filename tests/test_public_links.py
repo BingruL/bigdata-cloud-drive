@@ -41,7 +41,9 @@ def test_owner_creates_link_and_public_downloads_exact_bytes(client, app, alice)
     assert stored_link["download_count"] == "1"
     assert stored_link["last_download_at"]
     assert stored_file["downloads"] == "1"
-    assert logs and logs[0]["detail"] == file_info["file_id"]
+    assert logs and logs[0]["username"] == "public"
+    assert logs[0]["detail"].startswith(file_info["file_id"])
+    assert link["token"] in logs[0]["detail"]
 
 
 def test_password_protected_link_rejects_and_accepts_password(client, alice):

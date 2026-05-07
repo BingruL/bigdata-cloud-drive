@@ -57,6 +57,73 @@ def _folder_chain_active(hbase, config, parent_id, owner):
     return True
 
 
+@folder_bp.route("/tree", methods=["GET"])
+@login_required
+def folder_tree():
+    """返回当前用户全部活跃文件夹（前端构建移动目录树用）。"""
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+    folders = hbase.list_user_folders(config.HBASE_TABLE_FOLDERS, g.current_user)
+    return jsonify({"folders": folders})
+
+
+@folder_bp.route("/<folder_id>/summary", methods=["GET"])
+@login_required
+def folder_summary(folder_id):
+    """统计文件夹子树规模（删除前确认提示用）。"""
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+    folder, err = _get_mutable_folder(hbase, config, folder_id, allow_deleted=True)
+    if err:
+        return err
+    subtree = hbase.collect_folder_subtree(
+        config.HBASE_TABLE_FOLDERS, config.HBASE_TABLE_FILES, folder_id
+    )
+    folder_count = max(0, len(subtree["folders"]) - 1)
+    active_files = [f for f in subtree["files"] if f.get("deleted") != "1"]
+    file_count = len(active_files)
+    total_size = 0
+    for f in active_files:
+        try:
+            total_size += int(f.get("size", 0) or 0)
+        except (TypeError, ValueError):
+            pass
+    return jsonify({
+        "folder_id": folder_id,
+        "folder_count": folder_count,
+        "file_count": file_count,
+        "total_size": total_size,
+    })
+
+
+@folder_bp.route("/trash", methods=["GET"])
+@login_required
+def list_trashed_folders():
+    """回收站：列出当前用户软删除的顶层文件夹（被父级连带删除的子文件夹不展示）。"""
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+    owner = None if g.current_role == "admin" else g.current_user
+    folders = hbase.list_trashed_folders(config.HBASE_TABLE_FOLDERS, owner=owner)
+    items = [{**f, "item_type": "folder"} for f in folders]
+    return jsonify({"folders": items, "total": len(items)})
+
+
+@folder_bp.route("/<folder_id>", methods=["GET"])
+@login_required
+def get_folder(folder_id):
+    """获取文件夹详情。"""
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+    if folder_id == "root":
+        return jsonify(hbase.get_folder(config.HBASE_TABLE_FOLDERS, "root"))
+    folder = hbase.get_folder(config.HBASE_TABLE_FOLDERS, folder_id)
+    if not folder:
+        return jsonify({"error": "文件夹不存在"}), 404
+    if g.current_role != "admin" and folder.get("owner") != g.current_user:
+        return jsonify({"error": "无权访问此文件夹"}), 403
+    return jsonify(folder)
+
+
 @folder_bp.route("", methods=["POST"])
 @login_required
 def create_folder():

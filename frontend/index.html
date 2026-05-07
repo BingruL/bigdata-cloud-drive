@@ -152,7 +152,7 @@
             </div>
           </div>
 
-          <nav class="breadcrumb-bar" v-if="fileViewMode === 'list' || fileViewMode === 'grid'">
+          <nav class="breadcrumb-bar" v-if="(fileViewMode === 'list' || fileViewMode === 'grid') && !searchActive">
             <button v-for="(crumb, idx) in breadcrumbs"
                     :key="crumb.folder_id"
                     class="breadcrumb-item"
@@ -162,11 +162,15 @@
               <span>{{ crumb.name }}</span>
             </button>
           </nav>
+          <div class="search-banner" v-if="searchActive && (fileViewMode === 'list' || fileViewMode === 'grid')">
+            <span><i data-lucide="search"></i> 全站搜索 "{{ searchKeyword }}"<span v-if="!searchLoading">：{{ searchResults.length }} 个结果</span></span>
+            <button class="btn-sm" @click="clearSearch">返回浏览</button>
+          </div>
 
           <!-- 上传进度 -->
-          <div v-if="uploading" class="upload-progress">
-            <div class="progress-bar"><div class="progress-fill" style="width:100%; animation: pulse 1.5s infinite"></div></div>
-            <span>正在上传...</span>
+          <div v-if="uploadProgress" class="upload-progress">
+            <div class="progress-bar"><div class="progress-fill" :style="{width: uploadProgressPercent + '%'}"></div></div>
+            <span>正在上传 {{ uploadProgress.i }}/{{ uploadProgress.n }}：{{ uploadProgress.name || '准备中' }}</span>
           </div>
 
           <!-- ===== 列表视图 ===== -->
@@ -176,6 +180,7 @@
               <span class="batch-count">已选 <b>{{ selectionCount }}</b> 项</span>
               <div class="batch-actions">
                 <button @click="doBatchDownload" class="btn-sm"><i data-lucide="download"></i> {{ selectionCount > 1 ? '批量下载' : '下载' }}</button>
+                <button @click="openBatchMoveModal" class="btn-sm"><i data-lucide="folder-input"></i> {{ selectionCount > 1 ? '批量移动' : '移动' }}</button>
                 <button @click="doBatchDelete" class="btn-sm btn-danger"><i data-lucide="trash-2"></i> 移至回收站</button>
                 <button @click="clearSelection" class="btn-sm">取消</button>
               </div>
@@ -249,7 +254,7 @@
                     </td>
                   </tr>
                   <tr v-if="sortedItems.length === 0">
-                    <td colspan="8" class="empty-state">当前目录为空</td>
+                    <td colspan="8" class="empty-state">{{ searchActive ? '未找到匹配的文件' : '当前目录为空' }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -270,6 +275,7 @@
               <span class="batch-count">已选 <b>{{ selectionCount }}</b> 项</span>
               <div class="batch-actions">
                 <button @click="doBatchDownload" class="btn-sm"><i data-lucide="download"></i> {{ selectionCount > 1 ? '批量下载' : '下载' }}</button>
+                <button @click="openBatchMoveModal" class="btn-sm"><i data-lucide="folder-input"></i> {{ selectionCount > 1 ? '批量移动' : '移动' }}</button>
                 <button @click="doBatchDelete" class="btn-sm btn-danger"><i data-lucide="trash-2"></i> 移至回收站</button>
                 <button @click="clearSelection" class="btn-sm">取消</button>
               </div>
@@ -330,7 +336,7 @@
                 </div>
               </div>
             </div>
-            <div v-else class="empty-state" style="padding:72px 24px;text-align:center">当前目录为空</div>
+            <div v-else class="empty-state" style="padding:72px 24px;text-align:center">{{ searchActive ? '未找到匹配的文件' : '当前目录为空' }}</div>
 
             <!-- 分页 -->
             <div v-if="filePagination.total_pages > 1" class="pagination">
@@ -495,10 +501,10 @@
           <div class="page-header">
             <h2>回收站</h2>
             <div class="header-actions">
-              <span class="header-caption">{{ trashFiles.length }} 个文件 · 占 {{ storageInfo.trash_size_readable || '0 B' }}</span>
+              <span class="header-caption">{{ trashFolders.length }} 个文件夹 · {{ trashFiles.length }} 个文件 · 占 {{ storageInfo.trash_size_readable || '0 B' }}</span>
             </div>
           </div>
-          <p class="trash-hint">已移至回收站的文件仍占用存储配额。恢复可还原到"我的文件"，彻底删除后无法恢复。</p>
+          <p class="trash-hint">已移至回收站的文件夹/文件仍占用存储配额。恢复文件夹会还原其内的全部子项；彻底删除文件夹会递归清理 HDFS 文件。</p>
 
           <div v-if="selectionCount > 0" class="batch-toolbar">
             <span class="batch-count">已选 <b>{{ selectionCount }}</b> 项</span>
@@ -509,7 +515,36 @@
             </div>
           </div>
 
+          <div class="file-table-wrap" v-if="trashFolders.length">
+            <h4 class="trash-section-title">文件夹</h4>
+            <table class="file-table">
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th>类型</th>
+                  <th>删除时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="d in trashFolders" :key="d.folder_id" class="folder-row">
+                  <td class="filename-cell">
+                    <span class="file-icon folder-icon" data-type="folder"><i data-lucide="folder"></i></span>
+                    <span>{{ itemName(d) }}</span>
+                  </td>
+                  <td><span class="type-badge">文件夹</span></td>
+                  <td>{{ formatTime(d.deleted_at) }}</td>
+                  <td class="actions-cell">
+                    <button @click="doRestoreFolder(d)" class="btn-sm" title="恢复整个文件夹"><i data-lucide="undo-2"></i> 恢复</button>
+                    <button @click="doPurgeFolder(d)" class="btn-sm btn-danger" title="递归彻底删除"><i data-lucide="x"></i> 彻底删除</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
           <div class="file-table-wrap" v-if="trashFiles.length">
+            <h4 class="trash-section-title">文件</h4>
             <table class="file-table">
               <thead>
                 <tr>
@@ -545,7 +580,7 @@
               </tbody>
             </table>
           </div>
-          <div v-else class="empty-state" style="padding:72px 24px;text-align:center">回收站为空</div>
+          <div v-if="!trashFolders.length && !trashFiles.length" class="empty-state" style="padding:72px 24px;text-align:center">回收站为空</div>
         </div>
 
         <!-- ========== 数据看板 ========== -->
@@ -873,30 +908,31 @@
 
     <!-- 移动弹窗 -->
     <div v-if="moveModal" class="modal-overlay" @click.self="moveModal=null">
-      <div class="modal-card folder-form-modal">
-        <h3>移动到</h3>
-        <p class="modal-filename">{{ isFolder(moveModal.item) ? '文件夹' : '文件' }} · {{ itemName(moveModal.item) }}</p>
-        <div class="move-choice-list">
-          <label class="move-choice">
-            <input type="radio" value="root" v-model="moveModal.targetMode">
-            <span>根目录</span>
-          </label>
-          <label class="move-choice">
-            <input type="radio" value="current" v-model="moveModal.targetMode">
-            <span>当前目录：{{ breadcrumbs.length ? breadcrumbs[breadcrumbs.length - 1].name : '全部文件' }}</span>
-          </label>
-          <label class="move-choice">
-            <input type="radio" value="custom" v-model="moveModal.targetMode">
-            <span>输入目标文件夹 ID</span>
-          </label>
-        </div>
-        <div class="modal-form-row" v-if="moveModal.targetMode === 'custom'">
-          <label>目标 ID</label>
-          <input v-model="moveModal.targetId" type="text" placeholder="folder_id，留空表示根目录" @keyup.enter="confirmMove">
+      <div class="modal-card folder-form-modal move-modal">
+        <h3>{{ moveModal.batchIds ? `移动 ${moveModal.batchIds.length} 个文件` : '移动到' }}</h3>
+        <p v-if="!moveModal.batchIds" class="modal-filename">{{ isFolder(moveModal.item) ? '文件夹' : '文件' }} · {{ itemName(moveModal.item) }}</p>
+        <p class="text-muted" style="font-size:13px;margin-bottom:8px">点击下方目录选择移动目标。</p>
+        <div class="move-tree">
+          <button
+            v-for="row in flatMoveTree"
+            :key="row.folder_id"
+            type="button"
+            class="move-tree-row"
+            :class="{selected: moveModal.targetId === row.folder_id, disabled: row.disabled}"
+            :disabled="row.disabled"
+            :style="{paddingLeft: (10 + row.depth * 16) + 'px'}"
+            @click="setMoveTarget(row.folder_id)">
+            <i :data-lucide="row.folder_id === 'root' ? 'home' : 'folder'"></i>
+            <span class="move-tree-name">{{ row.name }}</span>
+            <span v-if="moveModal.targetId === row.folder_id" class="move-tree-mark">✓</span>
+          </button>
+          <div v-if="!flatMoveTree.length" class="empty-state" style="padding:20px;text-align:center">
+            目录加载中…
+          </div>
         </div>
         <div class="modal-actions">
           <button class="btn btn-secondary" @click="moveModal=null">取消</button>
-          <button class="btn btn-primary" @click="confirmMove">移动</button>
+          <button class="btn btn-primary" @click="confirmMove" :disabled="!moveModal.targetId">移动到此处</button>
         </div>
       </div>
     </div>
@@ -922,7 +958,7 @@
             <input :value="publicShareUrl(link)" readonly>
             <span class="public-link-meta">下载 {{ link.download_count || 0 }} 次 · {{ link.requires_password ? '有提取码' : '无提取码' }}</span>
             <span class="public-link-meta">有效期至 {{ formatTime(link.expires_at) }}</span>
-            <button class="btn-sm" @click="copyPublicShareUrl(link)" title="复制"><i data-lucide="copy"></i></button>
+            <button class="btn-sm" @click="copyPublicShareUrl(link)" :disabled="link.enabled !== '1'" :title="link.enabled === '1' ? '复制' : '链接已撤销'"><i data-lucide="copy"></i></button>
             <button class="btn-sm btn-danger" @click="revokePublicLink(link)" :disabled="link.enabled !== '1'" title="撤销"><i data-lucide="unlink"></i></button>
           </div>
         </div>
