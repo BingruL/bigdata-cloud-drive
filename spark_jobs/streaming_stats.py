@@ -92,7 +92,7 @@ def _save_stats_to_hbase(rows):
 def _compute_and_write_metrics(now_ms, extra_rows=None):
     """基于当前 _recent_events 重算 4 个实时指标并写 HBase。
     foreachBatch 和 heartbeat 都调用它，保证空闲时窗口也会持续滑动
-    （否则 60 秒前的旧 download 会一直停在面板上不过期）。
+    （否则超过 5 分钟的旧 download 仍会停留在动作计数和热门文件面板中不过期）。
     """
     with _state_lock:
         _prune(now_ms)
