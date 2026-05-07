@@ -287,6 +287,43 @@ class HBaseService:
             if data:
                 table.put(file_id.encode(), data)
 
+    def list_child_folders(self, table_name, owner, parent_id, include_deleted=False, only_deleted=False):
+        """列出指定父目录下的文件夹。"""
+        rows = []
+        with self._get_connection() as conn:
+            table = conn.table(table_name)
+            for key, data in table.scan():
+                row = {"folder_id": key.decode()}
+                for k, v in data.items():
+                    col = k.decode().split(":", 1)[1]
+                    row[col] = v.decode()
+                if row.get("owner") != owner:
+                    continue
+                if row.get("parent_id", "root") != parent_id:
+                    continue
+                deleted = row.get("deleted") == "1"
+                if only_deleted and not deleted:
+                    continue
+                if not include_deleted and not only_deleted and deleted:
+                    continue
+                rows.append({**row, "item_type": "folder"})
+        rows.sort(key=lambda r: r.get("name", ""))
+        return rows
+
+    def get_folder(self, table_name, folder_id):
+        """获取文件夹元数据；root 是不落表的伪目录。"""
+        if folder_id == "root":
+            return {"folder_id": "root", "name": "全部文件", "parent_id": "", "owner": ""}
+        with self._get_connection() as conn:
+            row = conn.table(table_name).row(folder_id.encode())
+            if not row:
+                return None
+            result = {"folder_id": folder_id}
+            for k, v in row.items():
+                col = k.decode().split(":", 1)[1]
+                result[col] = v.decode()
+            return result
+
     # ========== 操作日志 ==========
 
     def add_log(self, table_name, username, action, detail=""):
