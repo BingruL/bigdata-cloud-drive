@@ -183,9 +183,8 @@ def browse_files():
     config = current_app.config["APP_CONFIG"]
     hbase = current_app.config["HBASE_SERVICE"]
     parent_id = request.args.get("parent_id", "root") or "root"
-    owner = None if g.current_role == "admin" else g.current_user
     folders = hbase.list_child_folders(config.HBASE_TABLE_FOLDERS, g.current_user, parent_id)
-    files_result = hbase.list_files(config.HBASE_TABLE_FILES, owner=owner, page=1, page_size=config.MAX_PAGE_SIZE)
+    files_result = hbase.list_files(config.HBASE_TABLE_FILES, owner=g.current_user, page=1, page_size=config.MAX_PAGE_SIZE)
     files = []
     for f in files_result["files"]:
         if f.get("parent_id", "root") != parent_id:
