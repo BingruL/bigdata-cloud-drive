@@ -275,6 +275,18 @@ class HBaseService:
             table.delete(file_id.encode(), columns=[b"meta:deleted", b"meta:deleted_at"])
             return True
 
+    def update_file_meta_fields(self, table_name, file_id, fields):
+        """批量更新文件元数据字段。"""
+        with self._get_connection() as conn:
+            table = conn.table(table_name)
+            row = table.row(file_id.encode())
+            if not row:
+                return False
+            table.put(file_id.encode(), {
+                f"meta:{k}".encode(): str(v).encode() for k, v in fields.items()
+            })
+            return True
+
     def update_file_ai(self, table_name, file_id, summary=None, tags=None):
         """更新文件的 AI 摘要和标签"""
         with self._get_connection() as conn:
@@ -331,6 +343,135 @@ class HBaseService:
                 col = k.decode().split(":", 1)[1]
                 result[col] = v.decode()
             return result
+
+    def update_folder_fields(self, table_name, folder_id, fields):
+        """批量更新文件夹元数据字段。"""
+        if folder_id == "root":
+            return False
+        with self._get_connection() as conn:
+            table = conn.table(table_name)
+            row = table.row(folder_id.encode())
+            if not row:
+                return False
+            table.put(folder_id.encode(), {
+                f"meta:{k}".encode(): str(v).encode() for k, v in fields.items()
+            })
+            return True
+
+    def _scan_folders_raw(self, table_name):
+        folders = []
+        with self._get_connection() as conn:
+            table = conn.table(table_name)
+            for key, data in table.scan():
+                folder = {"folder_id": key.decode()}
+                for k, v in data.items():
+                    col = k.decode().split(":", 1)[1]
+                    folder[col] = v.decode()
+                folders.append(folder)
+        return folders
+
+    def collect_folder_subtree(self, folders_table, files_table, folder_id):
+        """返回 folder_id 及所有后代文件夹、文件元数据。"""
+        folders = self._scan_folders_raw(folders_table)
+        by_parent = {}
+        for folder in folders:
+            by_parent.setdefault(folder.get("parent_id", "root"), []).append(folder)
+
+        subtree_folders = []
+        stack = [folder_id]
+        folder_ids = set()
+        while stack:
+            current_id = stack.pop()
+            if current_id in folder_ids:
+                continue
+            folder_ids.add(current_id)
+            if current_id != folder_id:
+                folder = next((f for f in folders if f.get("folder_id") == current_id), None)
+                if folder:
+                    subtree_folders.append(folder)
+            for child in by_parent.get(current_id, []):
+                stack.append(child["folder_id"])
+
+        root_folder = next((f for f in folders if f.get("folder_id") == folder_id), None)
+        if root_folder:
+            subtree_folders.insert(0, root_folder)
+
+        subtree_files = [
+            f for f in self.get_all_files_raw(files_table, include_deleted=True)
+            if f.get("parent_id", "root") in folder_ids
+        ]
+        return {"folders": subtree_folders, "files": subtree_files}
+
+    def is_descendant_folder(self, table_name, ancestor_folder_id, candidate_folder_id):
+        """candidate_folder_id 是否是 ancestor_folder_id 的后代目录。"""
+        if candidate_folder_id == "root":
+            return False
+        folders = {f["folder_id"]: f for f in self._scan_folders_raw(table_name)}
+        current = folders.get(candidate_folder_id)
+        while current:
+            parent_id = current.get("parent_id", "root")
+            if parent_id == ancestor_folder_id:
+                return True
+            if parent_id == "root":
+                return False
+            current = folders.get(parent_id)
+        return False
+
+    def soft_delete_folder_tree(self, folders_table, files_table, folder_id):
+        """软删除文件夹子树及其所有文件。"""
+        now = str(int(time.time() * 1000))
+        subtree = self.collect_folder_subtree(folders_table, files_table, folder_id)
+        with self._get_connection() as conn:
+            folders = conn.table(folders_table)
+            files = conn.table(files_table)
+            for folder in subtree["folders"]:
+                folders.put(folder["folder_id"].encode(), {
+                    b"meta:deleted": b"1",
+                    b"meta:deleted_at": now.encode(),
+                    b"meta:updated_at": now.encode(),
+                })
+            for file_info in subtree["files"]:
+                files.put(file_info["file_id"].encode(), {
+                    b"meta:deleted": b"1",
+                    b"meta:deleted_at": now.encode(),
+                    b"meta:updated_at": now.encode(),
+                })
+        return subtree
+
+    def restore_folder_tree(self, folders_table, files_table, folder_id):
+        """恢复文件夹子树及其所有文件。"""
+        now = str(int(time.time() * 1000))
+        subtree = self.collect_folder_subtree(folders_table, files_table, folder_id)
+        with self._get_connection() as conn:
+            folders = conn.table(folders_table)
+            files = conn.table(files_table)
+            for folder in subtree["folders"]:
+                folders.delete(folder["folder_id"].encode(), columns=[b"meta:deleted", b"meta:deleted_at"])
+                folders.put(folder["folder_id"].encode(), {b"meta:updated_at": now.encode()})
+            for file_info in subtree["files"]:
+                files.delete(file_info["file_id"].encode(), columns=[b"meta:deleted", b"meta:deleted_at"])
+                files.put(file_info["file_id"].encode(), {b"meta:updated_at": now.encode()})
+        return subtree
+
+    def purge_folder_tree(self, folders_table, files_table, folder_id, hdfs=None):
+        """永久删除文件夹子树、文件元数据，并清理 HDFS 文件。"""
+        subtree = self.collect_folder_subtree(folders_table, files_table, folder_id)
+        if hdfs:
+            for file_info in subtree["files"]:
+                hdfs_path = file_info.get("hdfs_path")
+                if hdfs_path:
+                    try:
+                        hdfs.delete_file(hdfs_path)
+                    except Exception as e:
+                        logger.warning(f"HDFS 文件删除失败（继续清理元数据）: {e}")
+        with self._get_connection() as conn:
+            folders = conn.table(folders_table)
+            files = conn.table(files_table)
+            for file_info in subtree["files"]:
+                files.delete(file_info["file_id"].encode())
+            for folder in subtree["folders"]:
+                folders.delete(folder["folder_id"].encode())
+        return subtree
 
     def resolve_available_name(self, files_table, folders_table, owner, parent_id, desired_name,
                                exclude_file_id=None, exclude_folder_id=None):

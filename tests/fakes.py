@@ -134,6 +134,13 @@ class FakeHBaseService:
         row.pop("deleted_at", None)
         return True
 
+    def update_file_meta_fields(self, table_name, file_id, fields):
+        row = self._t(table_name).get(file_id)
+        if not row:
+            return False
+        row.update({k: str(v) for k, v in fields.items()})
+        return True
+
     def update_file_ai(self, table_name, file_id, summary=None, tags=None):
         row = self._t(table_name).get(file_id)
         if not row:
@@ -201,6 +208,104 @@ class FakeHBaseService:
             return {"folder_id": "root", "name": "全部文件", "parent_id": "", "owner": ""}
         row = self._t(table_name).get(folder_id)
         return {"folder_id": folder_id, **row} if row else None
+
+    def update_folder_fields(self, table_name, folder_id, fields):
+        if folder_id == "root":
+            return False
+        row = self._t(table_name).get(folder_id)
+        if not row:
+            return False
+        row.update({k: str(v) for k, v in fields.items()})
+        return True
+
+    def collect_folder_subtree(self, folders_table, files_table, folder_id):
+        folders = [
+            {"folder_id": fid, **row}
+            for fid, row in self._t(folders_table).items()
+        ]
+        by_parent = {}
+        for folder in folders:
+            by_parent.setdefault(folder.get("parent_id", "root"), []).append(folder)
+
+        folder_ids = set()
+        subtree_folders = []
+        stack = [folder_id]
+        while stack:
+            current_id = stack.pop()
+            if current_id in folder_ids:
+                continue
+            folder_ids.add(current_id)
+            folder = next((f for f in folders if f.get("folder_id") == current_id), None)
+            if folder:
+                subtree_folders.append(folder)
+            for child in by_parent.get(current_id, []):
+                stack.append(child["folder_id"])
+
+        subtree_files = [
+            {"file_id": fid, **row}
+            for fid, row in self._t(files_table).items()
+            if row.get("parent_id", "root") in folder_ids
+        ]
+        return {"folders": subtree_folders, "files": subtree_files}
+
+    def is_descendant_folder(self, table_name, ancestor_folder_id, candidate_folder_id):
+        if candidate_folder_id == "root":
+            return False
+        folders = self._t(table_name)
+        current = folders.get(candidate_folder_id)
+        while current:
+            parent_id = current.get("parent_id", "root")
+            if parent_id == ancestor_folder_id:
+                return True
+            if parent_id == "root":
+                return False
+            current = folders.get(parent_id)
+        return False
+
+    def soft_delete_folder_tree(self, folders_table, files_table, folder_id):
+        now = str(int(time.time() * 1000))
+        subtree = self.collect_folder_subtree(folders_table, files_table, folder_id)
+        for folder in subtree["folders"]:
+            row = self._t(folders_table).get(folder["folder_id"])
+            if row is not None:
+                row["deleted"] = "1"
+                row["deleted_at"] = now
+                row["updated_at"] = now
+        for file_info in subtree["files"]:
+            row = self._t(files_table).get(file_info["file_id"])
+            if row is not None:
+                row["deleted"] = "1"
+                row["deleted_at"] = now
+                row["updated_at"] = now
+        return subtree
+
+    def restore_folder_tree(self, folders_table, files_table, folder_id):
+        now = str(int(time.time() * 1000))
+        subtree = self.collect_folder_subtree(folders_table, files_table, folder_id)
+        for folder in subtree["folders"]:
+            row = self._t(folders_table).get(folder["folder_id"])
+            if row is not None:
+                row.pop("deleted", None)
+                row.pop("deleted_at", None)
+                row["updated_at"] = now
+        for file_info in subtree["files"]:
+            row = self._t(files_table).get(file_info["file_id"])
+            if row is not None:
+                row.pop("deleted", None)
+                row.pop("deleted_at", None)
+                row["updated_at"] = now
+        return subtree
+
+    def purge_folder_tree(self, folders_table, files_table, folder_id, hdfs=None):
+        subtree = self.collect_folder_subtree(folders_table, files_table, folder_id)
+        for file_info in subtree["files"]:
+            hdfs_path = file_info.get("hdfs_path")
+            if hdfs and hdfs_path:
+                hdfs.delete_file(hdfs_path)
+            self._t(files_table).pop(file_info["file_id"], None)
+        for folder in subtree["folders"]:
+            self._t(folders_table).pop(folder["folder_id"], None)
+        return subtree
 
     def resolve_available_name(self, files_table, folders_table, owner, parent_id, desired_name,
                                exclude_file_id=None, exclude_folder_id=None):

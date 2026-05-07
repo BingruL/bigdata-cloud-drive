@@ -45,6 +45,39 @@ def _can_access(meta):
     return bool(shared & _my_group_ids())
 
 
+def _now_ms():
+    return str(int(time.time() * 1000))
+
+
+def _json_object():
+    body = request.get_json(silent=True)
+    if body is None:
+        return {}
+    if not isinstance(body, dict):
+        return None
+    return body
+
+
+def _validate_parent(hbase, config, parent_id):
+    if parent_id == "root":
+        return True, None
+    parent = hbase.get_folder(config.HBASE_TABLE_FOLDERS, parent_id)
+    if not parent or parent.get("deleted") == "1":
+        return False, ("目标目录不存在", 404)
+    if parent.get("owner") != g.current_user:
+        return False, ("无权访问目标目录", 403)
+    return True, None
+
+
+def _owned_active_file(hbase, config, file_id):
+    meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
+    if not meta or meta.get("deleted") == "1":
+        return None, (jsonify({"error": "文件不存在"}), 404)
+    if meta.get("owner") != g.current_user:
+        return None, (jsonify({"error": "无权操作此文件"}), 403)
+    return meta, None
+
+
 @file_bp.route("/upload", methods=["POST"])
 @login_required
 def upload_file():
@@ -59,6 +92,11 @@ def upload_file():
     config = current_app.config["APP_CONFIG"]
     hbase = current_app.config["HBASE_SERVICE"]
     hdfs = current_app.config["HDFS_SERVICE"]
+    parent_id = (request.form.get("parent_id") or "root").strip() or "root"
+    ok, err = _validate_parent(hbase, config, parent_id)
+    if not ok:
+        msg, code = err
+        return jsonify({"error": msg}), code
 
     # 生成文件 ID
     file_id = uuid.uuid4().hex
@@ -86,19 +124,31 @@ def upload_file():
         }), 413
 
     try:
+        display_name = hbase.resolve_available_name(
+            config.HBASE_TABLE_FILES,
+            config.HBASE_TABLE_FOLDERS,
+            g.current_user,
+            parent_id,
+            file.filename,
+        )
+
         # 上传到 HDFS
         hdfs_path = hdfs.upload_file(
             g.current_user, file_id, temp_path, file.filename
         )
 
         # 保存元数据到 HBase
+        now = _now_ms()
         meta = {
             "filename": file.filename,
+            "display_name": display_name,
+            "parent_id": parent_id,
             "size": str(file_size),
             "type": file_ext,
             "owner": g.current_user,
             "hdfs_path": hdfs_path,
-            "created_at": str(int(time.time() * 1000)),
+            "created_at": now,
+            "updated_at": now,
             "downloads": "0",
             "summary": "",
             "tags": "",
@@ -132,6 +182,8 @@ def upload_file():
             "file": {
                 "file_id": file_id,
                 "filename": file.filename,
+                "display_name": display_name,
+                "parent_id": parent_id,
                 "size": file_size,
                 "type": file_ext,
                 "hdfs_path": hdfs_path,
@@ -299,6 +351,83 @@ def get_file_info(file_id):
         return jsonify({"error": "无权访问此文件"}), 403
 
     return jsonify(meta)
+
+
+@file_bp.route("/<file_id>/rename", methods=["PATCH"])
+@login_required
+def rename_file(file_id):
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+    body = _json_object()
+    if body is None:
+        return jsonify({"error": "请求体必须为JSON对象"}), 400
+    raw_name = body.get("name")
+    if not isinstance(raw_name, str):
+        return jsonify({"error": "文件名称必须为字符串"}), 400
+    name = raw_name.strip()
+    if not name:
+        return jsonify({"error": "文件名称不能为空"}), 400
+
+    meta, err = _owned_active_file(hbase, config, file_id)
+    if err:
+        return err
+    parent_id = meta.get("parent_id", "root") or "root"
+    display_name = hbase.resolve_available_name(
+        config.HBASE_TABLE_FILES,
+        config.HBASE_TABLE_FOLDERS,
+        g.current_user,
+        parent_id,
+        name,
+        exclude_file_id=file_id,
+    )
+    hbase.update_file_meta_fields(
+        config.HBASE_TABLE_FILES,
+        file_id,
+        {"display_name": display_name, "updated_at": _now_ms()},
+    )
+    current_app.config["EVENT_BUS"].log(g.current_user, "rename", file_id)
+    updated = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
+    return jsonify(updated)
+
+
+@file_bp.route("/<file_id>/move", methods=["PATCH"])
+@login_required
+def move_file(file_id):
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+    body = _json_object()
+    if body is None:
+        return jsonify({"error": "请求体必须为JSON对象"}), 400
+    raw_parent_id = body.get("target_parent_id", body.get("parent_id"))
+    if raw_parent_id is not None and not isinstance(raw_parent_id, str):
+        return jsonify({"error": "目标目录ID必须为字符串"}), 400
+    target_parent_id = (raw_parent_id or "root").strip() or "root"
+
+    meta, err = _owned_active_file(hbase, config, file_id)
+    if err:
+        return err
+    ok, parent_err = _validate_parent(hbase, config, target_parent_id)
+    if not ok:
+        msg, code = parent_err
+        return jsonify({"error": msg}), code
+
+    current_name = meta.get("display_name") or meta.get("filename", "")
+    display_name = hbase.resolve_available_name(
+        config.HBASE_TABLE_FILES,
+        config.HBASE_TABLE_FOLDERS,
+        g.current_user,
+        target_parent_id,
+        current_name,
+        exclude_file_id=file_id,
+    )
+    hbase.update_file_meta_fields(
+        config.HBASE_TABLE_FILES,
+        file_id,
+        {"parent_id": target_parent_id, "display_name": display_name, "updated_at": _now_ms()},
+    )
+    current_app.config["EVENT_BUS"].log(g.current_user, "move", file_id)
+    updated = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
+    return jsonify(updated)
 
 
 @file_bp.route("/<file_id>/download", methods=["GET"])
