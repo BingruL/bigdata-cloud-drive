@@ -47,7 +47,9 @@
 |---|---|---|
 | **HDFS** | 文件二进制内容 | `/cloud-drive/files/{username}/{file_id}.{ext}` |
 | **HBase: cloud_drive_users** | 用户账号 | rowkey = `username` |
-| **HBase: cloud_drive_files** | 文件元数据 | rowkey = `file_id`，列族 meta，含 `is_shared`、`shared_groups` 稀疏列 |
+| **HBase: cloud_drive_files** | 文件元数据 | rowkey = `file_id`，列族 meta，含 `display_name`、`parent_id`、`is_shared`、`shared_groups` 稀疏列 |
+| **HBase: cloud_drive_folders** | 用户私有目录树 | rowkey = `folder_id`，以 `parent_id` 串联目录层级 |
+| **HBase: cloud_drive_public_links** | 公开链接元数据 | rowkey = `token`，记录文件、过期时间、提取码哈希、撤销状态和下载次数 |
 | **HBase: cloud_drive_logs** | 操作审计日志 | rowkey = `timestamp_uuid`（时序排列） |
 | **HBase: cloud_drive_stats** | 离线 + 实时统计结果 | rowkey 含 `realtime_*` 前缀做命名空间隔离 |
 | **HBase: cloud_drive_groups / group_members / user_groups** | 群组的双表反向索引 | `{gid}#{user}` 与 `{user}#{gid}` 各存一份，两个方向都能 O(prefix) 扫 |
@@ -74,9 +76,9 @@
 
 ### 2.4 服务层（Serving Layer）
 
-- **Flask REST API**：`/api/auth/*`、`/api/files/*`、`/api/groups/*`、`/api/stats/*`、`/api/ai/*`
+- **Flask REST API**：`/api/auth/*`、`/api/files/*`、`/api/folders/*`、`/api/public-links/*`、`/api/groups/*`、`/api/stats/*`、`/api/ai/*`
 - **EventBus**：路由层埋点，统一发到 Kafka topic（或回退直写 HBase）
-- **Vue 3 SPA**：登录、文件管理、群组共享、智能推荐、数据看板（含实时面板）、回收站
+- **Vue 3 SPA**：登录、目录化文件管理、公开链接、群组共享、PDF/文本/图片预览、智能推荐、数据看板（含实时面板）、回收站
 - **ECharts**：柱状图、饼图、折线图、日历热力图、横向柱状图、关系图谱
 
 ### 2.5 事件总线（Kafka）
@@ -94,8 +96,9 @@
 ```
 浏览器  ──multipart──►  Flask /api/files/upload
                               │
+                              ├─► HBaseService.resolve_available_name  (同目录重名规避)
                               ├─► HDFSService.upload_file        (二进制内容)
-                              ├─► HBaseService.save_file_meta    (元数据)
+                              ├─► HBaseService.save_file_meta    (元数据，含 parent_id)
                               ├─► EventBus.log("upload", fid)    (事件)
                               │       │
                               │       ├─► Kafka topic
@@ -107,7 +110,47 @@
                                       └─► HBaseService.update_file_ai
 ```
 
-### 3.2 仪表盘加载
+### 3.2 目录与移动
+
+```
+浏览器  ──HTTP──► Flask /api/files/browse?parent_id=...
+                             │
+                             ├─► HBase cloud_drive_folders 取当前目录子文件夹
+                             └─► HBase cloud_drive_files 过滤 parent_id 取文件
+```
+
+重命名 / 移动只更新 HBase 元数据：HDFS 中的文件仍按 file_id 存储，避免大文件或大目录 rename 带来的代价。
+
+### 3.3 公开链接下载
+
+```
+浏览器 /s/<token> ──► Flask 静态公开页
+        │
+        ├─► GET  /api/public-links/<token>            (读取公开链接信息)
+        └─► POST /api/public-links/<token>/download   (校验过期/撤销/提取码)
+                                                    │
+                                                    ├─► HDFSService.read_file
+                                                    ├─► public_link downloads +1
+                                                    └─► EventBus.log("public_download", fid)
+```
+
+公开下载不要求登录，但必须经过 token、过期时间、撤销状态和提取码校验；文件删除或彻底删除后链接不会继续暴露内容。
+
+### 3.4 PDF 在线预览
+
+```
+浏览器  ──POST──► /api/files/<id>/preview-token  (JWT 登录态，签发 5 分钟预览 Token)
+浏览器 iframe ──► /api/files/<id>/preview-stream?token=...
+                              │
+                              ├─► 校验 preview token 的 purpose / file_id / exp
+                              ├─► 重新应用文件读取权限
+                              ├─► HDFSService.read_file
+                              └─► inline application/pdf
+```
+
+短期预览 Token 只用于 PDF 流，不替代登录 Token；共享权限变更后，流式接口会重新检查当前权限。
+
+### 3.5 仪表盘加载
 
 ```
 浏览器  ──HTTP──►  Flask /api/stats/dashboard       (从 HBase 实时聚合)
@@ -118,7 +161,7 @@
 前端 Dashboard 每 2 秒轮询 /api/stats/realtime，把绿色脉冲点变亮。
 ```
 
-### 3.3 按标签搜索（走 MR/Spark 倒排索引）
+### 3.6 按标签搜索（走 MR/Spark 倒排索引）
 
 ```
 浏览器  ──HTTP──►  Flask /api/files/by-tag/Hadoop
