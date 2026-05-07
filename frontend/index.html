@@ -418,6 +418,7 @@
                 </div>
                 <pre v-else-if="previewModal.type === 'text'" class="preview-text">{{ previewModal.content }}</pre>
                 <img v-else-if="previewModal.type === 'image'" :src="previewModal.data_url" :alt="previewModal.filename" class="preview-image">
+                <iframe v-else-if="previewModal.type === 'pdf'" :src="previewModal.url" class="pdf-frame"></iframe>
                 <div v-else class="preview-unsupported">
                   <div class="preview-icon">{{ getFileIcon('') }}</div>
                   <p>{{ previewModal.message || '此类型文件暂不支持预览' }}</p>

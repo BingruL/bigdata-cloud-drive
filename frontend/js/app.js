@@ -411,6 +411,15 @@ const app = createApp({
       previewLoading.value = true;
       previewModal.value = { filename: itemName(f), type: "loading" };
       try {
+        if ((f.type || "").toLowerCase() === "pdf") {
+          const data = await api(`/files/${f.file_id}/preview-token`, { method: "POST" });
+          previewModal.value = {
+            filename: itemName(f),
+            type: "pdf",
+            url: `${API_BASE}/files/${f.file_id}/preview-stream?token=${encodeURIComponent(data.token)}`,
+          };
+          return;
+        }
         const data = await api(`/files/${f.file_id}/preview`);
         previewModal.value = data;
       } catch (e) {

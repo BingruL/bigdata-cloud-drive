@@ -50,6 +50,44 @@ class JWTHandler:
             logger.warning(f"Token 无效: {e}")
             return None
 
+    def generate_preview_token(self, username, file_id, ttl_seconds=300, role="user"):
+        """生成仅用于 PDF 预览流的短期 Token"""
+        now = int(time.time())
+        payload = {
+            "purpose": "pdf_preview",
+            "username": username,
+            "role": role,
+            "file_id": file_id,
+            "iat": now,
+            "exp": now + int(ttl_seconds),
+        }
+        return jwt.encode(payload, self.secret, algorithm="HS256")
+
+    def decode_preview_token(self, token):
+        """
+        解码 PDF 预览 Token。
+        只校验签名、过期时间和用途，具体 file_id 权限由路由层处理。
+        """
+        try:
+            payload = jwt.decode(token, self.secret, algorithms=["HS256"], leeway=5)
+        except jwt.ExpiredSignatureError:
+            logger.warning("PDF 预览 Token 已过期")
+            return None
+        except jwt.InvalidTokenError as e:
+            logger.warning(f"PDF 预览 Token 无效: {e}")
+            return None
+        if payload.get("purpose") != "pdf_preview":
+            logger.warning("PDF 预览 Token 用途不匹配")
+            return None
+        return payload
+
+    def verify_preview_token(self, token, file_id):
+        """验证 PDF 预览 Token 是否属于指定文件"""
+        payload = self.decode_preview_token(token)
+        if not payload or payload.get("file_id") != file_id:
+            return None
+        return payload
+
     def refresh_token(self, token):
         """
         刷新 Token（延长有效期）

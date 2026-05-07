@@ -5,6 +5,7 @@
 import os
 import uuid
 import time
+import io
 from flask import Blueprint, request, jsonify, g, current_app, send_file
 from ..auth.jwt_handler import login_required
 from ..utils import parse_int_arg, BadArg
@@ -27,22 +28,32 @@ def _my_group_ids():
     return set(hbase.list_user_group_ids(config.HBASE_TABLE_USER_GROUPS, g.current_user))
 
 
+def _can_access_identity(meta, username, role="user"):
+    """按指定身份判断文件读取权限，用于不走 login_required 的预览流。"""
+    if role == "admin":
+        return True
+    if meta.get("owner") == username:
+        return True
+    if meta.get("is_shared") != "1":
+        return False
+
+    shared = {x for x in (meta.get("shared_groups") or "").split(",") if x}
+    if not shared:
+        return False
+
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+    user_groups = set(hbase.list_user_group_ids(config.HBASE_TABLE_USER_GROUPS, username))
+    return bool(shared & user_groups)
+
+
 def _can_access(meta):
     """文件读取权限：
     - admin 永远可读
     - 文件主可读
     - 文件 is_shared=1 且 shared_groups 与当前用户所在群组有交集时可读
     """
-    if g.current_role == "admin":
-        return True
-    if meta.get("owner") == g.current_user:
-        return True
-    if meta.get("is_shared") != "1":
-        return False
-    shared = {x for x in (meta.get("shared_groups") or "").split(",") if x}
-    if not shared:
-        return False
-    return bool(shared & _my_group_ids())
+    return _can_access_identity(meta, g.current_user, g.current_role)
 
 
 def _now_ms():
@@ -632,6 +643,77 @@ def files_by_tag(tag):
         "files": files,
         "index_updated_at": updated_at or None,
     })
+
+
+@file_bp.route("/<file_id>/preview-token", methods=["POST"])
+@login_required
+def create_pdf_preview_token(file_id):
+    """签发短期 PDF 预览 Token，供浏览器 iframe 加载二进制流。"""
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+    jwt_handler = current_app.config["JWT_HANDLER"]
+
+    meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
+    if not meta or meta.get("deleted") == "1":
+        return jsonify({"error": "文件不存在"}), 404
+    if not _can_access(meta):
+        return jsonify({"error": "无权访问此文件"}), 403
+    if meta.get("type", "").lower() != "pdf":
+        return jsonify({"error": "当前仅支持 PDF 文件在线预览"}), 415
+
+    ttl_seconds = config.PDF_PREVIEW_TOKEN_TTL_SECONDS
+    token = jwt_handler.generate_preview_token(
+        g.current_user,
+        file_id,
+        ttl_seconds=ttl_seconds,
+        role=g.current_role,
+    )
+    return jsonify({"token": token, "expires_in": ttl_seconds})
+
+
+@file_bp.route("/<file_id>/preview-stream", methods=["GET"])
+def stream_pdf_preview(file_id):
+    """通过短期预览 Token 返回 inline PDF 二进制流。"""
+    config = current_app.config["APP_CONFIG"]
+    hbase = current_app.config["HBASE_SERVICE"]
+    hdfs = current_app.config["HDFS_SERVICE"]
+    jwt_handler = current_app.config["JWT_HANDLER"]
+
+    meta = hbase.get_file_meta(config.HBASE_TABLE_FILES, file_id)
+    if not meta or meta.get("deleted") == "1":
+        return jsonify({"error": "文件不存在"}), 404
+    if meta.get("type", "").lower() != "pdf":
+        return jsonify({"error": "当前仅支持 PDF 文件在线预览"}), 415
+
+    token = request.args.get("token", "")
+    payload = jwt_handler.decode_preview_token(token)
+    if not payload:
+        return jsonify({"error": "预览链接无效或已过期"}), 401
+    if payload.get("file_id") != file_id:
+        return jsonify({"error": "预览 Token 与文件不匹配"}), 403
+
+    username = payload.get("username", "")
+    role = payload.get("role", "user")
+    if not username or not _can_access_identity(meta, username, role):
+        return jsonify({"error": "无权预览此文件"}), 403
+
+    hdfs_path = meta.get("hdfs_path")
+    if not hdfs_path:
+        return jsonify({"error": "文件存储路径缺失"}), 500
+
+    try:
+        raw = hdfs.read_file(hdfs_path)
+        current_app.config["EVENT_BUS"].log(username, "preview", file_id)
+        filename = meta.get("display_name") or meta.get("filename") or "preview.pdf"
+        return send_file(
+            io.BytesIO(raw),
+            mimetype="application/pdf",
+            as_attachment=False,
+            download_name=filename,
+        )
+    except Exception as e:
+        current_app.logger.error(f"PDF 预览失败: {e}")
+        return jsonify({"error": f"PDF 预览失败: {str(e)}"}), 500
 
 
 @file_bp.route("/<file_id>/preview", methods=["GET"])
