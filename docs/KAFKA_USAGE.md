@@ -158,8 +158,8 @@ python run.py
 
 - **降级而非中断**：producer 初始化失败、send 失败均自动回退到 HBase 直写，请求链路永不报错
 - **解耦**：写日志这一动作脱离请求关键路径，前端响应更快；HBase 短暂抖动不影响业务
-- **多消费者扇出**：同一份事件可被 log_consumer、Spark Streaming、Flume 等多个消费者订阅，是 Lambda 架构 speed layer 的基础
-- **at-least-once 语义**：`auto_offset_reset=earliest` + 自动 commit，简单期末项目场景下保证不丢失，重复落库由 HBase 同 RowKey 的幂等 put 兜底
+- **多消费者扇出**：同一份事件可被 log_consumer 和 Spark Streaming 订阅，是 Lambda 架构 speed layer 的基础；后续可再接 Flume/Kafka Source 做 HDFS 冷归档。
+- **投递语义取舍**：consumer 使用 `auto_offset_reset=earliest` 和自动 commit，适合期末项目演示；它不是严格的 exactly-once，也不能承诺故障场景下绝对不丢。若要生产级 at-least-once，应在 HBase 写入成功后手动 commit offset，并用事件 ID 作为日志 RowKey 做幂等去重。
 - **水平扩容**：再起一个 consumer 进程加入同一 group 即可分摊分区
 
 ---
@@ -186,4 +186,4 @@ python run.py
 
 ### Q4. 想观察"启用 vs 不启用"性能差异
 
-参考 `IMPROVEMENT_PLAN.md` 中第 2.4 节"性能压测脚本"。
+参考项目内的 `scripts/benchmark.py`，可分别在未启用 Kafka 和启用 Kafka 后运行同一组请求，对比 QPS 与 p50/p95/p99 延迟。

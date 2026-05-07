@@ -549,12 +549,12 @@ footer a:hover { color: var(--fg); }
         <li><strong>清空回收站</strong>：管理员可一键清空所有已删除文件。</li>
       </ul>
       <h3>存储配额</h3>
-      <p>侧栏底部的容量条显示当前用户已用空间与配额上限。默认配额为 <code>2 GB</code>，可由管理员按用户调整。达到 90% 时会弹出提醒；达到 100% 时上传会被拒绝。</p>
+      <p>侧栏底部的容量条显示当前用户已用空间与配额上限。默认配额为普通用户 <code>10 GB</code>、管理员 <code>200 GB</code>，可通过后端环境变量覆盖。达到 80% 时容量条变为警示状态；超过配额时上传会被拒绝。</p>
     </section>
 
     <section class="doc-section" id="dashboard">
       <h2><span class="num">10</span>数据看板</h2>
-      <p class="lead">侧栏「数据看板」融合 <strong>实时</strong>（Spark Structured Streaming）与 <strong>离线</strong>（Spark 批作业）两层指标，同屏展示当下系统活跃度与历史聚合趋势。</p>
+      <p class="lead">侧栏「数据看板」由服务层即时聚合 HBase 常规指标，并融合 Spark Structured Streaming 写入的实时面板数据，同屏展示当下系统活跃度与历史趋势。</p>
 
       <h3>实时面板（顶部）</h3>
       <ul>
@@ -563,7 +563,7 @@ footer a:hover { color: var(--fg); }
         <li>实时数据来自 Kafka topic <code>cloud_drive_events</code>，由 <code>spark_jobs/streaming_stats.py</code> 在 <code>foreachBatch</code> 中维护滚动窗口并写回 <code>cloud_drive_stats</code>。</li>
       </ul>
 
-      <h3>离线统计</h3>
+      <h3>常规统计</h3>
       <ul>
         <li><strong>文件类型分布</strong>：饼图展示各类型（文档 / 图片 / 视频 / 其他）占比；</li>
         <li><strong>上传趋势</strong>：折线图显示最近 7 / 30 天的每日上传量；</li>
@@ -573,7 +573,7 @@ footer a:hover { color: var(--fg); }
 
       <div class="callout">
         <div class="ic"><i data-lucide="terminal"></i></div>
-        <div>离线数据由 Spark 批作业计算并写入 <code>cloud_drive_stats</code> 表。管理员可执行 <code>spark-submit spark_jobs/file_stats.py</code> 手动刷新；要启用实时面板需先 <code>docker compose -f docker-compose.kafka.yml up -d</code> 并启动 Streaming 作业。</div>
+        <div>常规图表由 Flask 统计服务直接扫描 HBase 后按当前用户视角聚合，登录即可使用；Spark 批作业会把离线分析结果写入 <code>cloud_drive_stats</code>，主要用于课程批计算演示与扩展。要启用实时面板需先 <code>docker compose -f docker-compose.kafka.yml up -d</code> 并启动 Streaming 作业。</div>
       </div>
     </section>
 
@@ -611,7 +611,7 @@ footer a:hover { color: var(--fg); }
       <p>普通用户请联系管理员重置；管理员密码由启动时的 <code>ADMIN_PASSWORD</code> 环境变量或默认 <code>admin123</code> 控制。</p>
 
       <h3>数据看板没有数据？</h3>
-      <p>数据看板依赖 Spark 批作业产出的聚合数据。若首次启动或未执行过批作业，请在后端目录运行：<code>spark-submit --master local[*] spark_jobs/file_stats.py</code>。</p>
+      <p>常规看板数据由后端实时扫描 HBase 聚合。若顶部实时面板没有数据，请确认 Kafka 与 Spark Structured Streaming 已启动；未启用时不影响其它图表。</p>
 
       <h3>文件关系图谱显示为空？</h3>
       <p>关系图谱需要至少两份文件共享标签。请先通过 AI 自动标签或手动添加标签，图谱便会自动构建。</p>

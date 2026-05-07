@@ -722,7 +722,7 @@ footer a:hover { color: var(--fg); }
     <div class="bento-card span-2">
       <div class="icon-wrap ic-violet"><i data-lucide="shield-check"></i></div>
       <h3>企业级安全与审计</h3>
-      <p>JWT 鉴权、角色分离、全链路操作日志写入 HBase，可追溯任意一次上传、下载与删除。回收站与配额双重保护，永不丢失。</p>
+      <p>JWT 鉴权、角色分离、全链路操作日志写入 HBase，可追溯上传、下载与删除。回收站与配额机制降低误删和超额上传风险。</p>
     </div>
 
   </div>
@@ -743,7 +743,7 @@ footer a:hover { color: var(--fg); }
     <div class="bento-card">
       <div class="icon-wrap ic-rose"><i data-lucide="cpu"></i></div>
       <h3>计算层</h3>
-      <p>Spark 批处理 + Flume 流式采集</p>
+      <p>Spark 批处理 + Kafka 事件流</p>
     </div>
     <div class="bento-card">
       <div class="icon-wrap ic-cyan"><i data-lucide="server"></i></div>
@@ -798,7 +798,7 @@ footer a:hover { color: var(--fg); }
     <div class="compare-row">
       <div class="compare-label">可观测性</div>
       <div class="compare-old">日志散落在前后端，排查一次问题要翻好几个地方。</div>
-      <div class="compare-ours">Flume 实时汇聚 + HBase 日志表，任意操作一键追溯。</div>
+      <div class="compare-ours">Kafka 事件总线 + HBase 日志表，操作链路集中追溯；Flume 配置预留 HDFS 冷归档扩展。</div>
     </div>
   </div>
 </section>

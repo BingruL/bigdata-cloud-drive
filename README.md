@@ -522,7 +522,7 @@ pip install pytest
 python -m pytest tests/ -q
 ```
 
-预计输出：`51 passed in ~1s`。完整说明见 `tests/` 目录下的各 `test_*.py`。
+当前核对输出：`81 passed, 1 warning in ~1s`。完整说明见 `tests/` 目录下的各 `test_*.py`。
 
 > 测试范围有意限定在项目"原有功能"，新加入的 Kafka / Spark Streaming / MapReduce 因依赖外部基础设施未纳入单元测试，请通过对应的 `docs/*_USAGE.md` 文档手动验证。
 
