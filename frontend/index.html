@@ -21,6 +21,10 @@
     <!-- 登录/注册页 -->
     <div v-if="!token" class="auth-page">
       <div class="auth-container">
+        <a href="/" class="auth-back-link" aria-label="返回引导页">
+          <i data-lucide="arrow-left"></i>
+          <span>返回引导页</span>
+        </a>
         <div class="auth-header">
           <div class="logo-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 12c0 5.25-4.25 9.5-9.5 9.5S2.5 17.25 2.5 12 6.75 2.5 12 2.5s9.5 4.25 9.5 9.5z"/><path d="M9 12l2 2 4-4"/></svg>
@@ -236,8 +240,16 @@
                     <td :title="f.created_at ? new Date(parseInt(f.created_at)).toLocaleString('zh-CN') : ''">{{ formatTime(f.created_at) }}</td>
                     <td>{{ isFolder(f) ? '—' : (f.downloads || 0) }}</td>
                     <td>
-                      <template v-if="isFile(f)">
-                        <span v-for="tag in (f.tags || '').split(',').filter(t=>t)" class="tag-badge">{{ tag }}</span>
+                      <template v-if="isFile(f) && f.tags">
+                        <span class="tags-cell">
+                          <span v-for="tag in (f.tags || '').split(',').filter(t=>t).slice(0,2)" class="tag-badge">{{ tag }}</span>
+                          <span v-if="(f.tags || '').split(',').filter(t=>t).length > 2" class="tag-badge tag-more">
+                            +{{ (f.tags || '').split(',').filter(t=>t).length - 2 }}
+                            <span class="tag-popover">
+                              <span v-for="tag in (f.tags || '').split(',').filter(t=>t)" class="tag-badge">{{ tag }}</span>
+                            </span>
+                          </span>
+                        </span>
                       </template>
                       <span v-if="isFolder(f) || !f.tags" class="text-muted">—</span>
                     </td>

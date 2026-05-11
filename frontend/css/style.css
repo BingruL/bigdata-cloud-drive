@@ -140,6 +140,24 @@ h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; color: var(--ink);
   content: "";
 }
 
+.auth-back-link {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 28px;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: var(--transition);
+}
+.auth-back-link:hover { color: var(--vermillion); }
+.auth-back-link svg { width: 15px; height: 15px; stroke-width: 1.8; }
+
 .auth-header { text-align: left; margin-bottom: 36px; position: relative; }
 .auth-header .logo-icon {
   width: 44px; height: 44px; margin: 0 0 22px;
@@ -755,6 +773,39 @@ h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; color: var(--ink);
 }
 .tag-badge::before { content: "#"; color: var(--vermillion); margin-right: 2px; }
 .tag-badge.lg { padding: 6px 14px; font-size: 12px; margin: 4px; }
+
+.tags-cell { position: relative; display: inline-flex; flex-wrap: wrap; align-items: center; }
+.tag-more {
+  cursor: default;
+  background: var(--ink);
+  color: var(--paper);
+  position: relative;
+}
+.tag-more::before { content: ""; margin-right: 0; }
+.tag-popover {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  max-width: 320px;
+  padding: 8px 10px 6px;
+  background: var(--paper);
+  border: 1px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  white-space: normal;
+}
+.tag-popover::after {
+  content: "";
+  position: absolute;
+  bottom: -6px; right: 12px;
+  width: 10px; height: 10px;
+  background: var(--paper);
+  border-right: 1px solid var(--ink);
+  border-bottom: 1px solid var(--ink);
+  transform: rotate(45deg);
+}
+.tag-more:hover .tag-popover { display: block; }
 
 .text-muted { color: var(--ink-faint); font-style: italic; }
 
@@ -1627,8 +1678,8 @@ h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; color: var(--ink);
 /* =====================================================
    ENTRANCE ANIMATIONS
    ===================================================== */
-.main-content > div { animation: rise .55s cubic-bezier(.2,.7,.2,1) both; }
-.main-content > div > .page-header { animation: rise .55s .05s cubic-bezier(.2,.7,.2,1) both; }
+.main-content > div { animation: rise .55s cubic-bezier(.2,.7,.2,1) backwards; }
+.main-content > div > .page-header { animation: rise .55s .05s cubic-bezier(.2,.7,.2,1) backwards; }
 .stat-cards { animation: rise .55s .12s cubic-bezier(.2,.7,.2,1) both; }
 .chart-grid { animation: rise .55s .18s cubic-bezier(.2,.7,.2,1) both; }
 .file-table-wrap { animation: rise .55s .14s cubic-bezier(.2,.7,.2,1) both; }
@@ -1659,6 +1710,7 @@ h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; color: var(--ink);
   .auth-page::before { width: 100%; height: 240px; clip-path: polygon(0 0, 100% 0, 100% 88%, 0 100%); }
   .auth-page::after { color: rgba(245,239,225,0.7); }
   .auth-container { margin-top: 200px; grid-column: 1; }
+  .auth-back-link { margin-bottom: 24px; }
 
   .sidebar { width: 64px; }
   .sidebar-logo span:not(.logo-dot), .sidebar-nav span, .user-info, .btn-logout, .storage-panel { display: none; }
