@@ -1,0 +1,9 @@
+label,step,rows,bytes,seconds,rows_per_sec,mb_per_sec,status
+scale_20260512_121632,hbase_file_metadata,1000,104857600,0.066,15260.93,1526.09,ok
+scale_20260512_121632,hbase_operation_logs,10000,0,0.238,41998.71,0.0,ok
+scale_20260512_121632,hdfs_payload,0,0,0.0,0.0,0.0,skipped
+scale_20260512_121734,hbase_file_metadata,100000,1073741824,5.556,17997.68,184.3,ok
+scale_20260512_121734,hbase_operation_logs,1000000,0,28.703,34839.53,0.0,ok
+scale_20260512_121734,hdfs_payload,16,1073741824,7.451,2.15,137.43,ok
+scale_20260512_121734,spark_file_stats,0,0,26.517,0.0,0.0,ok
+scale_20260512_121734,spark_tag_index,0,0,10.033,0.0,0.0,ok

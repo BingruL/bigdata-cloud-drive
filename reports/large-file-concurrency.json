@@ -1,0 +1,133 @@
+{
+  "label": "http_large_20260512_173459",
+  "base_url": "http://localhost:5000",
+  "users": [
+    "benchu1",
+    "benchu2",
+    "benchu3",
+    "benchu4"
+  ],
+  "file_size": "1GB",
+  "files_per_user": 1,
+  "concurrency": 4,
+  "summaries": [
+    {
+      "phase": "upload",
+      "total": 4,
+      "success": 4,
+      "errors": 0,
+      "error_rate_pct": 0.0,
+      "bytes": 4294967296,
+      "wall_seconds_approx": 61.534,
+      "aggregate_mbps_approx": 66.57,
+      "mean_seconds": 55.25,
+      "p50_seconds": 57.81,
+      "p95_seconds": 61.534,
+      "p99_seconds": 61.534
+    },
+    {
+      "phase": "download",
+      "total": 4,
+      "success": 4,
+      "errors": 0,
+      "error_rate_pct": 0.0,
+      "bytes": 4294967296,
+      "wall_seconds_approx": 23.911,
+      "aggregate_mbps_approx": 171.3,
+      "mean_seconds": 22.96,
+      "p50_seconds": 23.862,
+      "p95_seconds": 23.911,
+      "p99_seconds": 23.911
+    }
+  ],
+  "results": [
+    {
+      "phase": "upload",
+      "username": "benchu4",
+      "filename": "http_large_20260512_173459_benchu4_000_payload-1073741824.bin",
+      "file_id": "887362517fe54251bb6249faaeff307a",
+      "bytes": 1073741824,
+      "seconds": 50.516024726995965,
+      "status_code": 201,
+      "ok": true,
+      "error": ""
+    },
+    {
+      "phase": "upload",
+      "username": "benchu1",
+      "filename": "http_large_20260512_173459_benchu1_000_payload-1073741824.bin",
+      "file_id": "c5199d1f7eac4c4a815abe5985fdd976",
+      "bytes": 1073741824,
+      "seconds": 51.138883549996535,
+      "status_code": 201,
+      "ok": true,
+      "error": ""
+    },
+    {
+      "phase": "upload",
+      "username": "benchu3",
+      "filename": "http_large_20260512_173459_benchu3_000_payload-1073741824.bin",
+      "file_id": "608a0422f499418ba57c23bf8c1d6cac",
+      "bytes": 1073741824,
+      "seconds": 57.809991108006216,
+      "status_code": 201,
+      "ok": true,
+      "error": ""
+    },
+    {
+      "phase": "upload",
+      "username": "benchu2",
+      "filename": "http_large_20260512_173459_benchu2_000_payload-1073741824.bin",
+      "file_id": "0a8717086a0d4849982e6efd66112377",
+      "bytes": 1073741824,
+      "seconds": 61.533753878000425,
+      "status_code": 201,
+      "ok": true,
+      "error": ""
+    },
+    {
+      "phase": "download",
+      "username": "benchu3",
+      "filename": "http_large_20260512_173459_benchu3_000_payload-1073741824.bin",
+      "file_id": "608a0422f499418ba57c23bf8c1d6cac",
+      "bytes": 1073741824,
+      "seconds": 20.398156269002357,
+      "status_code": 200,
+      "ok": true,
+      "error": ""
+    },
+    {
+      "phase": "download",
+      "username": "benchu2",
+      "filename": "http_large_20260512_173459_benchu2_000_payload-1073741824.bin",
+      "file_id": "0a8717086a0d4849982e6efd66112377",
+      "bytes": 1073741824,
+      "seconds": 23.66723817899765,
+      "status_code": 200,
+      "ok": true,
+      "error": ""
+    },
+    {
+      "phase": "download",
+      "username": "benchu4",
+      "filename": "http_large_20260512_173459_benchu4_000_payload-1073741824.bin",
+      "file_id": "887362517fe54251bb6249faaeff307a",
+      "bytes": 1073741824,
+      "seconds": 23.86230883600365,
+      "status_code": 200,
+      "ok": true,
+      "error": ""
+    },
+    {
+      "phase": "download",
+      "username": "benchu1",
+      "filename": "http_large_20260512_173459_benchu1_000_payload-1073741824.bin",
+      "file_id": "c5199d1f7eac4c4a815abe5985fdd976",
+      "bytes": 1073741824,
+      "seconds": 23.911094541996135,
+      "status_code": 200,
+      "ok": true,
+      "error": ""
+    }
+  ]
+}
