@@ -1,5 +1,6 @@
 """文件管理集成测试 —— 上传 / 列表 / 下载 / 软删除 / 恢复 / 彻底删除 / 搜索"""
 import io
+import os
 
 
 def _upload(client, headers, filename="hello.txt", content=b"hello world"):
@@ -74,6 +75,18 @@ def test_owner_can_download(client, alice):
     rv2 = client.get(f"/api/files/{fid}/download", headers=h)
     assert rv2.status_code == 200
     assert rv2.data == b"abcdef"
+
+
+def test_download_temp_file_is_cleaned(client, app, alice, tmp_path):
+    _, _, h = alice
+    app.config["APP_CONFIG"].UPLOAD_TEMP_DIR = str(tmp_path)
+    rv = _upload(client, h, "data.txt", b"abcdef")
+    fid = rv.get_json()["file"]["file_id"]
+
+    rv2 = client.get(f"/api/files/{fid}/download", headers=h)
+
+    assert rv2.status_code == 200
+    assert not any(name.startswith("dl_") for name in os.listdir(tmp_path))
 
 
 def test_other_user_cannot_download_private_file(client, alice, bob):

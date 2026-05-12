@@ -157,6 +157,23 @@ def create_app():
         if not request.path.startswith("/api/"):
             raise e
         if isinstance(e, HTTPException):
+            if e.code == 413:
+                limit = app.config.get("MAX_CONTENT_LENGTH") or 0
+
+                def _fmt(b):
+                    b = int(b)
+                    if b < 1024:
+                        return f"{b} B"
+                    if b < 1024**2:
+                        return f"{b / 1024:.1f} KB"
+                    if b < 1024**3:
+                        return f"{b / 1024**2:.1f} MB"
+                    return f"{b / 1024**3:.2f} GB"
+
+                return jsonify({
+                    "error": f"文件超过单次上传限制（当前上限 {_fmt(limit)}）",
+                    "max_upload_bytes": limit,
+                }), 413
             return jsonify({"error": e.description}), e.code
         logger.exception(f"未捕获异常 on {request.path}: {e}")
         return jsonify({"error": "服务器内部错误，请稍后重试"}), 500

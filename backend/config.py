@@ -5,6 +5,30 @@
 import os
 
 
+def parse_size_bytes(value, default):
+    """Parse byte sizes from env, accepting raw bytes or units like 5GB/512MB."""
+    if value is None or value == "":
+        return default
+    raw = str(value).strip()
+    units = (
+        ("TB", 1024 ** 4),
+        ("T", 1024 ** 4),
+        ("GB", 1024 ** 3),
+        ("G", 1024 ** 3),
+        ("MB", 1024 ** 2),
+        ("M", 1024 ** 2),
+        ("KB", 1024),
+        ("K", 1024),
+        ("B", 1),
+    )
+    upper = raw.upper()
+    for suffix, factor in units:
+        if upper.endswith(suffix):
+            number = raw[:-len(suffix)].strip()
+            return int(float(number) * factor)
+    return int(float(raw))
+
+
 class Config:
     """基础配置"""
     # Flask
@@ -37,8 +61,13 @@ class Config:
     PDF_PREVIEW_TOKEN_TTL_SECONDS = int(os.environ.get("PDF_PREVIEW_TOKEN_TTL_SECONDS", 300))
 
     # 文件上传
-    MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500MB
-    UPLOAD_TEMP_DIR = "/tmp/cloud-drive-uploads"
+    # 默认允许 5GB 级别单文件上传；可通过 MAX_UPLOAD_BYTES=1GB/10GB 等覆盖。
+    # 注意：当前 Web 上传仍会先落本地临时文件，再写入 HDFS。
+    MAX_CONTENT_LENGTH = parse_size_bytes(
+        os.environ.get("MAX_UPLOAD_BYTES"),
+        5 * 1024 * 1024 * 1024,
+    )
+    UPLOAD_TEMP_DIR = os.environ.get("UPLOAD_TEMP_DIR", "/tmp/cloud-drive-uploads")
 
     # 用户存储配额（字节）
     USER_QUOTA_BYTES = int(os.environ.get("USER_QUOTA_BYTES", 10 * 1024 * 1024 * 1024))   # 10GB

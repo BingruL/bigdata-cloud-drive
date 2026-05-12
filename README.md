@@ -117,6 +117,12 @@ export HDFS_URL=http://localhost:9870
 export HBASE_HOST=localhost
 export HBASE_PORT=9090
 
+# 单文件上传上限，默认 5GB；可写 1GB / 10GB / 2048MB 等
+export MAX_UPLOAD_BYTES=5GB
+
+# 上传会先落本地临时文件，再写入 HDFS；建议放到空间充足的磁盘
+export UPLOAD_TEMP_DIR=/tmp/cloud-drive-uploads
+
 # AI 服务（可选，用于文件摘要功能）
 # 支持任何兼容 OpenAI API 的服务，如 Ollama
 export AI_API_URL=http://localhost:11434/v1

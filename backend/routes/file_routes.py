@@ -6,7 +6,7 @@ import os
 import uuid
 import time
 import io
-from flask import Blueprint, request, jsonify, g, current_app, send_file
+from flask import Blueprint, request, jsonify, g, current_app, send_file, after_this_request
 from ..auth.jwt_handler import login_required
 from ..utils import parse_int_arg, BadArg
 
@@ -505,6 +505,15 @@ def download_file(file_id):
 
         # 记录日志
         current_app.config["EVENT_BUS"].log(g.current_user, "download", file_id)
+
+        @after_this_request
+        def _cleanup_download_temp(response):
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception as cleanup_err:
+                current_app.logger.warning(f"清理下载临时文件失败: {cleanup_err}")
+            return response
 
         return send_file(
             temp_path,
