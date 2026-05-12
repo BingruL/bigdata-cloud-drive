@@ -14,15 +14,39 @@ jps_has() {
   command -v jps >/dev/null 2>&1 && jps | awk '{print $2}' | grep -qx "$1"
 }
 
+expected_cmd_pattern() {
+  case "$1" in
+    flask) printf 'run.py' ;;
+    kafka-consumer) printf 'backend.workers.log_consumer' ;;
+    spark-streaming) printf 'spark_jobs/streaming_stats.py' ;;
+    *) return 1 ;;
+  esac
+}
+
 pid_status() {
   local name="$1"
   local pid_file="$PID_DIR/$name.pid"
+  local pid pattern cmdline
 
-  if [[ -s "$pid_file" ]] && kill -0 "$(cat "$pid_file")" >/dev/null 2>&1; then
-    print_status "$name" "running (pid $(cat "$pid_file"))"
-  else
+  if [[ ! -s "$pid_file" ]]; then
     print_status "$name" "stopped"
+    return 0
   fi
+
+  pid="$(cat "$pid_file")"
+  if ! kill -0 "$pid" >/dev/null 2>&1; then
+    print_status "$name" "stopped"
+    return 0
+  fi
+
+  pattern="$(expected_cmd_pattern "$name")" || pattern=""
+  cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)"
+  if [[ -n "$pattern" && "$cmdline" != *"$pattern"* ]]; then
+    print_status "$name" "stopped (stale pid $pid)"
+    return 0
+  fi
+
+  print_status "$name" "running (pid $pid)"
 }
 
 port_open() {

@@ -36,9 +36,27 @@ jps_has() {
   command_exists jps && jps | awk '{print $2}' | grep -qx "$1"
 }
 
+expected_cmd_pattern() {
+  case "$1" in
+    flask) printf 'run.py' ;;
+    kafka-consumer) printf 'backend.workers.log_consumer' ;;
+    spark-streaming) printf 'spark_jobs/streaming_stats.py' ;;
+    *) return 1 ;;
+  esac
+}
+
 pid_is_running() {
-  local pid_file="$1"
-  [[ -s "$pid_file" ]] && kill -0 "$(cat "$pid_file")" >/dev/null 2>&1
+  local name="$1"
+  local pid_file="$2"
+  local pid pattern cmdline
+
+  [[ -s "$pid_file" ]] || return 1
+  pid="$(cat "$pid_file")"
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+
+  pattern="$(expected_cmd_pattern "$name")" || return 0
+  cmdline="$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)"
+  [[ "$cmdline" == *"$pattern"* ]]
 }
 
 start_background() {
@@ -47,7 +65,7 @@ start_background() {
   local log_file="$LOG_DIR/$name.log"
   shift
 
-  if pid_is_running "$pid_file"; then
+  if pid_is_running "$name" "$pid_file"; then
     info "$name already running (pid $(cat "$pid_file"))"
     return 0
   fi
