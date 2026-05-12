@@ -20,6 +20,33 @@
   <div id="app">
     <!-- 登录/注册页 -->
     <div v-if="!token" class="auth-page">
+      <div class="auth-cover-detail" aria-hidden="true">
+        <div class="auth-cover-scanline"></div>
+        <svg class="auth-cover-network" viewBox="0 0 520 360" role="presentation" focusable="false">
+          <path d="M46 244H138L204 184H308L388 126H478" />
+          <path d="M96 108H178L246 156H354L420 212" />
+          <path d="M138 244L178 108" />
+          <path d="M204 184L246 156" />
+          <path d="M308 184L354 156" />
+          <path d="M388 126L420 212" />
+          <circle cx="46" cy="244" r="5" />
+          <circle cx="96" cy="108" r="5" />
+          <circle cx="138" cy="244" r="6" />
+          <circle cx="178" cy="108" r="6" />
+          <circle cx="204" cy="184" r="7" />
+          <circle cx="246" cy="156" r="5" />
+          <circle cx="308" cy="184" r="6" />
+          <circle cx="354" cy="156" r="5" />
+          <circle cx="388" cy="126" r="7" />
+          <circle cx="420" cy="212" r="5" />
+          <circle cx="478" cy="126" r="5" />
+        </svg>
+        <div class="auth-cover-index">
+          <span>DISTRIBUTED STORAGE</span>
+          <span>HBASE / HDFS ARCHIVE</span>
+          <span>BLOCK INDEX READY</span>
+        </div>
+      </div>
       <div class="auth-container">
         <a href="/" class="auth-back-link" aria-label="返回引导页">
           <i data-lucide="arrow-left"></i>

@@ -112,6 +112,84 @@ h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; color: var(--ink);
   color: rgba(245,239,225,0.55); z-index: 2;
 }
 
+.auth-cover-detail {
+  position: absolute;
+  left: 56px;
+  top: 132px;
+  bottom: 68px;
+  width: min(38vw, 620px);
+  z-index: 1;
+  color: rgba(245,239,225,0.5);
+  pointer-events: none;
+}
+.auth-cover-detail::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.34;
+  background-image:
+    linear-gradient(rgba(245,239,225,0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(245,239,225,0.06) 1px, transparent 1px);
+  background-size: 64px 64px;
+  -webkit-mask-image: linear-gradient(120deg, transparent 0%, #000 18%, #000 62%, transparent 100%);
+  mask-image: linear-gradient(120deg, transparent 0%, #000 18%, #000 62%, transparent 100%);
+}
+.auth-cover-scanline {
+  position: absolute;
+  left: 0;
+  top: 26px;
+  width: min(360px, 72%);
+  height: 1px;
+  background: linear-gradient(90deg, rgba(245,239,225,0.38), rgba(176,58,35,0.52), transparent);
+}
+.auth-cover-network {
+  position: absolute;
+  left: max(18px, 4vw);
+  top: 18vh;
+  width: min(430px, 74%);
+  height: auto;
+  overflow: visible;
+  opacity: 0.46;
+  transform: rotate(-15deg);
+  transform-origin: 50% 50%;
+}
+.auth-cover-network path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.auth-cover-network circle {
+  fill: #1b1714;
+  stroke: rgba(245,239,225,0.72);
+  stroke-width: 1.2;
+  vector-effect: non-scaling-stroke;
+}
+.auth-cover-index {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  display: grid;
+  gap: 9px;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: rgba(245,239,225,0.4);
+}
+.auth-cover-index span {
+  position: relative;
+  padding-left: 18px;
+}
+.auth-cover-index span::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.72em;
+  width: 8px;
+  height: 1px;
+  background: rgba(176,58,35,0.62);
+}
+
 .auth-container {
   position: relative; z-index: 3;
   grid-column: 2;
@@ -1709,6 +1787,7 @@ h1, h2, h3, h4 { font-family: var(--serif); font-weight: 600; color: var(--ink);
   .auth-page { grid-template-columns: 1fr; }
   .auth-page::before { width: 100%; height: 240px; clip-path: polygon(0 0, 100% 0, 100% 88%, 0 100%); }
   .auth-page::after { color: rgba(245,239,225,0.7); }
+  .auth-cover-detail { display: none; }
   .auth-container { margin-top: 200px; grid-column: 1; }
   .auth-back-link { margin-bottom: 24px; }
 
