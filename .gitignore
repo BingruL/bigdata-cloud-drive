@@ -46,6 +46,17 @@ logs/
 # Tool artifacts
 .codex/
 .claude/
+.agents/
+
+# Local-only docs / presentations (not for public repo)
+CLAUDE.md
+Presentation*.pptx
+docs/PPT_PLAN.md
+docs/PPT_UPDATES.md
+docs/PRESENTATION_SCRIPT.md
+docs/REPORT.md
+docs/superpowers/
+scripts/build_ppt.py
 
 # Runtime pid files written by scripts/start_full.sh
 .run/
