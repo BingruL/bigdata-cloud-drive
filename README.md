@@ -1,5 +1,9 @@
 # 基于 HBase/HDFS 的智能云盘系统
 
+[![tests](https://github.com/BingruL/bigdata-cloud-drive/actions/workflows/tests.yml/badge.svg)](https://github.com/BingruL/bigdata-cloud-drive/actions/workflows/tests.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 > 大数据技术基础 · 期末项目
 
 ## 一、项目概述
